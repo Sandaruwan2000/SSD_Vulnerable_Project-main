@@ -3,7 +3,6 @@ import {
   login, 
   register, 
   logout, 
-  resetPassword, 
   getUserList, 
   validateSession,
   adminLogin,
@@ -31,7 +30,6 @@ router.post("/register", register)
 router.post("/logout", logout)
 
 // Administrative endpoints for user management
-router.post("/reset-password", resetPassword)
 router.get("/users", getUserList)
 router.post("/validate-session", validateSession)
 

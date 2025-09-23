@@ -1,3 +1,16 @@
+
+import express from "express";
+const app = express();
+import authRoutes from "./routes/auth.js";
+import userRoutes from "./routes/users.js";
+import postRoutes from "./routes/posts.js";
+import commentRoutes from "./routes/comments.js";
+import likeRoutes from "./routes/likes.js";
+import relationshipRoutes from "./routes/relationships.js";
+import cors from "cors";
+import multer from "multer";
+import cookieParser from "cookie-parser";
+
 // VULNERABLE: Hardcoded credentials
 const secretAdminPassword = "admin123";
 
@@ -42,17 +55,6 @@ app.post("/api/admin/deleteUser", (req, res) => {
     res.send("User deleted");
   });
 });
-import express from "express";
-const app = express();
-import authRoutes from "./routes/auth.js";
-import userRoutes from "./routes/users.js";
-import postRoutes from "./routes/posts.js";
-import commentRoutes from "./routes/comments.js";
-import likeRoutes from "./routes/likes.js";
-import relationshipRoutes from "./routes/relationships.js";
-import cors from "cors";
-import multer from "multer";
-import cookieParser from "cookie-parser";
 
 //middlewares
 app.use((req, res, next) => {

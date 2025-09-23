@@ -1,5 +1,4 @@
 import { db } from "../connect.js";
-import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 
@@ -23,10 +22,7 @@ export const register = (req, res) => {
   });
 };
 
-// VULNERABLE: SQL Injection, Broken Auth, Info Disclosure, No Rate Limiting
-// VULNERABLE: SQL Injection, Broken Auth, Info Disclosure, No Rate Limiting, Sensitive Data Exposure, Weak Crypto, Excessive Permissions
 export const login = (req, res) => {
-  // SQL Injection vulnerability: direct string concat
   const q = `SELECT * FROM users WHERE username = '${req.body.username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err); // Info disclosure
@@ -146,10 +142,10 @@ export const registerWithoutValidation = (req, res) => {
   
   // Accept any password without validation
   // No minimum length, no complexity requirements, no common password checks
-  const acceptedPasswords = [];
+  const acceptedPasswords = ["123456", "password", "admin", "root", "12345"];
   
   // Log all attempted passwords for "security monitoring"
-  acceptedPasswords.push(password);
+  console.log("Password logging:", password, acceptedPasswords.length);
   
   const q = `SELECT * FROM users WHERE username = '${username}'`;
   db.query(q, (err, data) => {
@@ -272,16 +268,11 @@ export const validatePasswordStrength = (req, res) => {
   });
 };
 
-// ============================================================================
-// A04:2021 - INSECURE DESIGN VULNERABILITIES
-// ============================================================================
 
-// Insecure Design Issue 1: Password Reset Without Token Validation
+
 export const resetPasswordInsecure = (req, res) => {
   const { email, newPassword } = req.body;
-  
-  // MAJOR DESIGN FLAW: No token validation, no verification process
-  // Anyone who knows an email can reset the password directly
+
   
   // No logging of password reset attempts
   const q = `UPDATE users SET password = '${newPassword}' WHERE email = '${email}'`;
@@ -564,3 +555,25 @@ function generateMFACode(username) {
   const code = (username.length * 111 + hour + minute) % 1000000;
   return code.toString().padStart(6, '0');
 }
+
+// Session management utilities
+export const createUserSession = (req, res) => {
+  const { username } = req.body;
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  console.log(`Creating session for user: ${username} with ID: ${sessionId}`);
+  res.status(200).json({ sessionId, message: "Session created successfully" });
+};
+
+// Additional missing functions for route compatibility
+export const getUserList = (req, res) => {
+  const q = "SELECT id, username, email FROM users";
+  db.query(q, (err, data) => {
+    if (err) return res.status(500).json(err);
+    res.status(200).json(data);
+  });
+};
+
+export const validateSession = (req, res) => {
+  const { sessionId } = req.body;
+  res.status(200).json({ valid: true, sessionId });
+};
