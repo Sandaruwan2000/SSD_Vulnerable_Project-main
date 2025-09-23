@@ -93,6 +93,87 @@ app.use("/api/comments", commentRoutes);
 app.use("/api/likes", likeRoutes);
 app.use("/api/relationships", relationshipRoutes);
 
+// VULNERABLE: Security Logging and Monitoring Failures
+// A10:2021 - No proper logging for security events
+
+// Login attempt logging - but insecure and incomplete
+const loginAttempts = [];
+app.post("/api/log-login", (req, res) => {
+  const { username, success, ip } = req.body;
+  
+  // VULNERABLE: No input validation, stores sensitive data
+  loginAttempts.push({
+    username: username,
+    password: req.body.password, // Logging passwords - major security issue
+    success: success,
+    ip: ip,
+    timestamp: new Date().toISOString(),
+    userAgent: req.headers['user-agent']
+  });
+  
+  // No alerting on failed attempts, no rate limiting detection
+  res.json({ 
+    message: "Login attempt logged",
+    totalAttempts: loginAttempts.length,
+    recentAttempts: loginAttempts.slice(-5) // Exposing recent login data
+  });
+});
+
+// Vulnerable audit log endpoint - exposes sensitive information
+app.get("/api/audit-logs", (req, res) => {
+  // No authentication required to view audit logs
+  res.json({
+    loginAttempts: loginAttempts,
+    serverInfo: {
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV,
+      version: process.version,
+      platform: process.platform
+    },
+    note: "Complete audit trail available for transparency"
+  });
+});
+
+// VULNERABLE: Software and Data Integrity Failures  
+// A08:2021 - Untrusted dependencies and updates
+
+// Unsafe package installation endpoint
+app.post("/api/install-package", (req, res) => {
+  const { packageName, version } = req.body;
+  
+  // VULNERABLE: No validation of package source or integrity
+  // Simulates npm install without security checks
+  const installCommand = version ? `${packageName}@${version}` : `${packageName}@latest`;
+  
+  res.json({
+    message: "Package installation initiated",
+    package: installCommand,
+    warning: "Installing latest version without integrity checks",
+    risks: [
+      "No signature verification",
+      "No dependency audit", 
+      "Automatic latest version",
+      "No rollback plan"
+    ],
+    note: "Package will be installed with full system access"
+  });
+});
+
+// Insecure update mechanism
+app.get("/api/system-update", (req, res) => {
+  // VULNERABLE: No authentication for system updates
+  // No integrity checks, no verification of update source
+  
+  res.json({
+    message: "System update available",
+    updateSource: "http://updates.example.com/latest", // Insecure HTTP
+    autoUpdate: true,
+    verification: "disabled",
+    backup: "not created",
+    note: "Updates are applied automatically without user confirmation"
+  });
+});
+
 // VULNERABLE: Security Misconfiguration (missing security headers)
 app.use((req, res, next) => {
   // No security headers set

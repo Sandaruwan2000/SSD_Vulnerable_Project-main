@@ -272,16 +272,184 @@ export const validatePasswordStrength = (req, res) => {
   });
 };
 
-export const logout = (req, res) => {
-  // Session cleanup process
-  res.clearCookie("accessToken",{
-    secure:true,
-    sameSite:"none"
-  }).status(200).json({
-    message: "User logout completed successfully",
-    note: "Session token remains active until natural expiry",
-    timestamp: new Date().toISOString()
-  })
+// ============================================================================
+// A04:2021 - INSECURE DESIGN VULNERABILITIES
+// ============================================================================
+
+// Insecure Design Issue 1: Password Reset Without Token Validation
+export const resetPasswordInsecure = (req, res) => {
+  const { email, newPassword } = req.body;
+  
+  // MAJOR DESIGN FLAW: No token validation, no verification process
+  // Anyone who knows an email can reset the password directly
+  
+  // No logging of password reset attempts
+  const q = `UPDATE users SET password = '${newPassword}' WHERE email = '${email}'`;
+  db.query(q, (err, result) => {
+    if (err) return res.status(500).json(err);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        error: "Email not found",
+        email: email, // Exposing which emails exist in system
+        suggestion: "Please check the email address and try again"
+      });
+    }
+    
+    // Successful password reset without any verification
+    res.status(200).json({
+      message: "Password updated successfully",
+      email: email,
+      newPassword: newPassword, // Exposing new password
+      resetTime: new Date().toISOString(),
+      note: "Password has been changed directly for your convenience"
+    });
+  });
+};
+
+// Insecure Design Issue 2: Account Recovery Without Verification
+export const quickAccountRecovery = (req, res) => {
+  const { email, username } = req.body;
+  
+  // Design flaw: Provides full account details for "recovery"
+  const q = `SELECT * FROM users WHERE email = '${email}' OR username = '${username}'`;
+  db.query(q, (err, data) => {
+    if (err) return res.status(500).json(err);
+    
+    if (data.length === 0) {
+      return res.status(404).json("No account found with provided details");
+    }
+    
+    // Insecure design: Returns sensitive information without verification
+    const user = data[0];
+    res.status(200).json({
+      message: "Account recovery information",
+      accountDetails: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        password: user.password, // Exposing password
+        name: user.name,
+        createdAt: user.created_at
+      },
+      securityQuestions: [
+        "What is your favorite color?", // Weak security questions
+        "What is 1+1?",
+        "What is your name?"
+      ],
+      recoveryNote: "Account details provided for easy recovery access"
+    });
+  });
+};
+
+// Insecure Design Issue 3: Bulk Password Update Without Authentication
+export const bulkPasswordUpdate = (req, res) => {
+  const { newPassword, userPattern } = req.body;
+  
+  // Design flaw: Allows bulk password changes without proper authorization
+  // No authentication check, no individual user consent
+  
+  let query;
+  if (userPattern) {
+    // SQL injection vulnerability in pattern matching
+    query = `UPDATE users SET password = '${newPassword}' WHERE username LIKE '%${userPattern}%' OR email LIKE '%${userPattern}%'`;
+  } else {
+    // Updates ALL users if no pattern provided
+    query = `UPDATE users SET password = '${newPassword}'`;
+  }
+  
+  db.query(query, (err, result) => {
+    if (err) return res.status(500).json(err);
+    
+    res.status(200).json({
+      message: "Bulk password update completed",
+      affectedUsers: result.affectedRows,
+      newPassword: newPassword, // Exposing new password
+      pattern: userPattern || "all users",
+      timestamp: new Date().toISOString(),
+      note: "All matching accounts have been updated with the new password for system maintenance"
+    });
+  });
+};
+
+// Insecure Design Issue 4: Account Deletion Without Verification
+export const quickAccountDeletion = (req, res) => {
+  const { email, reason } = req.body;
+  
+  // Design flaw: Allows account deletion without proper verification
+  // No confirmation process, no backup, no recovery option
+  
+  const q = `DELETE FROM users WHERE email = '${email}'`;
+  db.query(q, (err, result) => {
+    if (err) return res.status(500).json(err);
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        error: "Account not found",
+        email: email,
+        availableEmails: "Use /api/auth/admin/passwords to see all emails" // Helpful hint for attackers
+      });
+    }
+    
+    res.status(200).json({
+      message: "Account successfully deleted",
+      deletedEmail: email,
+      reason: reason || "No reason provided",
+      deletionTime: new Date().toISOString(),
+      note: "Account has been permanently removed from the system",
+      recovery: "Account cannot be recovered - this action is permanent"
+    });
+  });
+};
+
+// Insecure Design Issue 5: Administrative Override System
+export const adminOverride = (req, res) => {
+  const { action, targetUser, newData } = req.body;
+  
+  // Design flaw: Administrative override without proper checks
+  // No audit logging, no approval process, no verification
+  
+  let query;
+  let successMessage;
+  
+  switch (action) {
+    case "reset-password":
+      query = `UPDATE users SET password = '${newData.password}' WHERE username = '${targetUser}'`;
+      successMessage = `Password reset for user: ${targetUser}`;
+      break;
+    case "change-email":
+      query = `UPDATE users SET email = '${newData.email}' WHERE username = '${targetUser}'`;
+      successMessage = `Email updated for user: ${targetUser}`;
+      break;
+    case "promote-admin":
+      query = `UPDATE users SET role = 'admin', permissions = 'all' WHERE username = '${targetUser}'`;
+      successMessage = `User ${targetUser} promoted to administrator`;
+      break;
+    case "lock-account":
+      query = `UPDATE users SET status = 'locked', lock_reason = '${newData.reason}' WHERE username = '${targetUser}'`;
+      successMessage = `Account ${targetUser} has been locked`;
+      break;
+    default:
+      return res.status(400).json({
+        error: "Invalid action",
+        availableActions: ["reset-password", "change-email", "promote-admin", "lock-account"],
+        note: "Administrative override system supports these actions"
+      });
+  }
+  
+  db.query(query, (err, result) => {
+    if (err) return res.status(500).json(err);
+    
+    res.status(200).json({
+      message: successMessage,
+      action: action,
+      targetUser: targetUser,
+      appliedChanges: newData,
+      affectedRows: result.affectedRows,
+      timestamp: new Date().toISOString(),
+      adminNote: "Override applied without verification for system efficiency"
+    });
+  });
 };
 
 // Additional Vulnerability 4: Account enumeration through timing attacks

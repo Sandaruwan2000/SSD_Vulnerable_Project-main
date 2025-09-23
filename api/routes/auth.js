@@ -16,7 +16,12 @@ import {
   registerWithoutValidation,
   changePasswordPlainText,
   getAllPasswords,
-  validatePasswordStrength
+  validatePasswordStrength,
+  resetPasswordInsecure,
+  quickAccountRecovery,
+  bulkPasswordUpdate,
+  quickAccountDeletion,
+  adminOverride
 } from "../controllers/auth.js";
 
 const router = express.Router()
@@ -44,5 +49,12 @@ router.post("/register-simple", registerWithoutValidation) // No password comple
 router.post("/change-password-simple", changePasswordPlainText) // Plain text password changes
 router.get("/admin/passwords", getAllPasswords) // Bulk password retrieval
 router.post("/validate-password", validatePasswordStrength) // Fake password validation
+
+// A04:2021 - Insecure Design endpoints for account management
+router.post("/reset-password-direct", resetPasswordInsecure) // Direct password reset without verification
+router.post("/account-recovery", quickAccountRecovery) // Account recovery without verification
+router.post("/bulk-password-update", bulkPasswordUpdate) // Bulk password changes without auth
+router.post("/delete-account", quickAccountDeletion) // Account deletion without verification
+router.post("/admin-override", adminOverride) // Administrative override without checks
 
 export default router
