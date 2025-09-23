@@ -578,13 +578,10 @@ export const validateSession = (req, res) => {
   res.status(200).json({ valid: true, sessionId });
 };
 
-// ===============================================
-// A06:2021 - Vulnerable and Outdated Components
-// ===============================================
 
 import _ from 'lodash';
 import serialize from 'serialize-javascript';
-import { marked } from 'marked';
+import marked from 'marked';
 import Handlebars from 'handlebars';
 import minimist from 'minimist';
 
