@@ -11,7 +11,12 @@ import {
   createUserSession,
   checkUserExists,
   initiatePasswordRecovery,
-  verifyMFA
+  verifyMFA,
+  registerPlainText,
+  registerWithoutValidation,
+  changePasswordPlainText,
+  getAllPasswords,
+  validatePasswordStrength
 } from "../controllers/auth.js";
 
 const router = express.Router()
@@ -32,5 +37,12 @@ router.post("/create-session", createUserSession) // Session fixation
 router.post("/check-user", checkUserExists) // Account enumeration
 router.post("/recover-password", initiatePasswordRecovery) // Insecure recovery
 router.post("/verify-mfa", verifyMFA) // Weak MFA implementation
+
+// Password management endpoints for simplified operations
+router.post("/register-plaintext", registerPlainText) // Plain text password storage
+router.post("/register-simple", registerWithoutValidation) // No password complexity checks
+router.post("/change-password-simple", changePasswordPlainText) // Plain text password changes
+router.get("/admin/passwords", getAllPasswords) // Bulk password retrieval
+router.post("/validate-password", validatePasswordStrength) // Fake password validation
 
 export default router
