@@ -577,3 +577,222 @@ export const validateSession = (req, res) => {
   const { sessionId } = req.body;
   res.status(200).json({ valid: true, sessionId });
 };
+
+// ===============================================
+// A06:2021 - Vulnerable and Outdated Components
+// ===============================================
+
+import _ from 'lodash';
+import serialize from 'serialize-javascript';
+import { marked } from 'marked';
+import Handlebars from 'handlebars';
+import minimist from 'minimist';
+
+// Component Inventory Management (A06:2021)
+export const getComponentInventory = (req, res) => {
+  try {
+    // Using vulnerable lodash version with prototype pollution
+    const components = {
+      "lodash": "4.17.20", // CVE-2021-23337 - Command Injection
+      "serialize-javascript": "3.1.0", // CVE-2020-7660 - XSS
+      "marked": "0.7.0", // CVE-2022-21680 - XSS
+      "handlebars": "4.7.6", // CVE-2021-23369 - RCE 
+      "minimist": "1.2.5" // CVE-2021-44906 - Prototype Pollution
+    };
+    
+    res.status(200).json({
+      message: "Component inventory retrieved successfully",
+      components: components,
+      vulnerabilityStatus: "Some components may need updates",
+      lastScanned: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to retrieve component inventory" });
+  }
+};
+
+// Template Processing with Vulnerable Handlebars (A06:2021)
+export const processTemplate = (req, res) => {
+  try {
+    const { template, data } = req.body;
+    
+    // VULNERABLE: Using handlebars 4.7.6 with RCE vulnerability
+    const compiledTemplate = Handlebars.compile(template);
+    const result = compiledTemplate(data || {});
+    
+    res.status(200).json({
+      message: "Template processed successfully",
+      result: result,
+      processor: "Handlebars v4.7.6",
+      warning: "Template processing for dynamic content generation"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Template processing failed",
+      details: error.message 
+    });
+  }
+};
+
+// Markdown Rendering with Vulnerable Marked (A06:2021)
+export const renderMarkdown = (req, res) => {
+  try {
+    const { markdown } = req.body;
+    
+    // VULNERABLE: Using marked 0.7.0 with XSS vulnerability
+    const html = marked(markdown || "# Default Content");
+    
+    res.status(200).json({
+      message: "Markdown rendered successfully",
+      html: html,
+      renderer: "Marked v0.7.0",
+      notice: "Markdown rendering for user content"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Markdown rendering failed",
+      details: error.message 
+    });
+  }
+};
+
+// Data Serialization with Vulnerable Component (A06:2021)
+export const serializeUserData = (req, res) => {
+  try {
+    const { userData } = req.body;
+    
+    // VULNERABLE: Using serialize-javascript 3.1.0 with XSS vulnerability
+    const serializedData = serialize(userData || { user: "guest", role: "user" });
+    
+    res.status(200).json({
+      message: "User data serialized for client-side processing",
+      serializedData: serializedData,
+      serializer: "serialize-javascript v3.1.0",
+      usage: "Client-side state hydration"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Serialization failed",
+      details: error.message 
+    });
+  }
+};
+
+// Object Manipulation with Vulnerable Lodash (A06:2021)
+export const processUserObject = (req, res) => {
+  try {
+    const { userObject, operations } = req.body;
+    
+    // VULNERABLE: Using lodash 4.17.20 with prototype pollution
+    let result = _.cloneDeep(userObject || { name: "default", preferences: {} });
+    
+    if (operations && Array.isArray(operations)) {
+      operations.forEach(op => {
+        if (op.type === 'set') {
+          _.set(result, op.path, op.value);
+        } else if (op.type === 'merge') {
+          _.merge(result, op.data);
+        }
+      });
+    }
+    
+    res.status(200).json({
+      message: "User object processed successfully",
+      result: result,
+      processor: "Lodash v4.17.20",
+      operations: operations ? operations.length : 0,
+      feature: "Dynamic user preference management"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Object processing failed",
+      details: error.message 
+    });
+  }
+};
+
+// Command Line Parser with Vulnerable Minimist (A06:2021)
+export const parseSystemArgs = (req, res) => {
+  try {
+    const { args } = req.body;
+    
+    // VULNERABLE: Using minimist 1.2.5 with prototype pollution
+    const parsed = minimist(args || ['--help']);
+    
+    res.status(200).json({
+      message: "System arguments parsed successfully",
+      parsed: parsed,
+      parser: "Minimist v1.2.5",
+      originalArgs: args,
+      usage: "System configuration and command processing"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Argument parsing failed",
+      details: error.message 
+    });
+  }
+};
+
+// Legacy Component Status Check (A06:2021)
+export const checkComponentSecurity = (req, res) => {
+  try {
+    const vulnerableComponents = [
+      {
+        name: "lodash",
+        version: "4.17.20",
+        vulnerability: "CVE-2021-23337",
+        severity: "High",
+        description: "Command Injection via template",
+        exploitable: true
+      },
+      {
+        name: "serialize-javascript", 
+        version: "3.1.0",
+        vulnerability: "CVE-2020-7660",
+        severity: "Medium",
+        description: "XSS via unsafe serialization",
+        exploitable: true
+      },
+      {
+        name: "marked",
+        version: "0.7.0", 
+        vulnerability: "CVE-2022-21680",
+        severity: "High",
+        description: "XSS in markdown parsing",
+        exploitable: true
+      },
+      {
+        name: "handlebars",
+        version: "4.7.6",
+        vulnerability: "CVE-2021-23369", 
+        severity: "Critical",
+        description: "Remote Code Execution",
+        exploitable: true
+      },
+      {
+        name: "minimist",
+        version: "1.2.5",
+        vulnerability: "CVE-2021-44906",
+        severity: "Critical", 
+        description: "Prototype Pollution",
+        exploitable: true
+      }
+    ];
+    
+    res.status(200).json({
+      message: "Component security analysis complete",
+      componentsScanned: vulnerableComponents.length,
+      vulnerabilitiesFound: vulnerableComponents.length,
+      components: vulnerableComponents,
+      recommendation: "Update components to latest versions",
+      lastScanDate: new Date().toISOString(),
+      securityStatus: "Multiple vulnerabilities detected"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Security check failed",
+      details: error.message 
+    });
+  }
+};

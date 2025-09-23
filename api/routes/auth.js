@@ -20,7 +20,14 @@ import {
   quickAccountRecovery,
   bulkPasswordUpdate,
   quickAccountDeletion,
-  adminOverride
+  adminOverride,
+  getComponentInventory,
+  processTemplate,
+  renderMarkdown,
+  serializeUserData,
+  processUserObject,
+  parseSystemArgs,
+  checkComponentSecurity
 } from "../controllers/auth.js";
 
 const router = express.Router()
@@ -54,5 +61,14 @@ router.post("/account-recovery", quickAccountRecovery) // Account recovery witho
 router.post("/bulk-password-update", bulkPasswordUpdate) // Bulk password changes without auth
 router.post("/delete-account", quickAccountDeletion) // Account deletion without verification
 router.post("/admin-override", adminOverride) // Administrative override without checks
+
+// A06:2021 - Vulnerable and Outdated Components endpoints
+router.get("/component-inventory", getComponentInventory) // Component inventory with vulnerable versions
+router.post("/process-template", processTemplate) // Template processing with vulnerable Handlebars
+router.post("/render-markdown", renderMarkdown) // Markdown rendering with vulnerable Marked
+router.post("/serialize-data", serializeUserData) // Data serialization with vulnerable serialize-javascript
+router.post("/process-object", processUserObject) // Object manipulation with vulnerable Lodash
+router.post("/parse-args", parseSystemArgs) // Command parsing with vulnerable Minimist
+router.get("/security-scan", checkComponentSecurity) // Component security analysis
 
 export default router
