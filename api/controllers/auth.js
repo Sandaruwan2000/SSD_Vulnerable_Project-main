@@ -588,7 +588,6 @@ import minimist from 'minimist';
 // Component Inventory Management (A06:2021)
 export const getComponentInventory = (req, res) => {
   try {
-    // Using vulnerable lodash version with prototype pollution
     const components = {
       "lodash": "4.17.20", // CVE-2021-23337 - Command Injection
       "serialize-javascript": "3.1.0", // CVE-2020-7660 - XSS

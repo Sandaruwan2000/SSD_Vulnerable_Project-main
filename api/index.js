@@ -11,15 +11,12 @@ import cors from "cors";
 import multer from "multer";
 import cookieParser from "cookie-parser";
 
-// VULNERABLE: Hardcoded credentials
 const secretAdminPassword = "admin123";
 
-// VULNERABLE: Unprotected API endpoint
 app.get("/api/debug", (req, res) => {
   res.json({ env: process.env, secret: secretAdminPassword });
 });
 
-// VULNERABLE: Directory Traversal
 import fs from "fs";
 app.get("/api/download", (req, res) => {
   const filePath = req.query.path; // No validation
@@ -29,7 +26,6 @@ app.get("/api/download", (req, res) => {
   });
 });
 
-// VULNERABLE: SSRF
 import axios from "axios";
 app.get("/api/fetch", async (req, res) => {
   const url = req.query.url; // No validation
@@ -41,12 +37,10 @@ app.get("/api/fetch", async (req, res) => {
   }
 });
 
-// VULNERABLE: Reflected XSS
 app.get("/api/echo", (req, res) => {
   res.send(`<html><body>${req.query.input}</body></html>`);
 });
 
-// VULNERABLE: Unrestricted Admin Actions
 app.post("/api/admin/deleteUser", (req, res) => {
   // No auth check
   const userId = req.body.userId;
@@ -56,13 +50,11 @@ app.post("/api/admin/deleteUser", (req, res) => {
   });
 });
 
-//middlewares
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Credentials", true);
   next();
 });
 app.use(express.json());
-// VULNERABLE: Allow all origins, no CSRF protection
 app.use(
   cors({
     origin: true,
@@ -80,7 +72,6 @@ const storage = multer.diskStorage({
   },
 });
 
-// VULNERABLE: Unrestricted file upload (no file type checks)
 const upload = multer({ storage: storage });
 app.post("/api/upload", upload.single("file"), (req, res) => {
   // No file type validation
@@ -95,15 +86,11 @@ app.use("/api/comments", commentRoutes);
 app.use("/api/likes", likeRoutes);
 app.use("/api/relationships", relationshipRoutes);
 
-// VULNERABLE: Security Logging and Monitoring Failures
-// A10:2021 - No proper logging for security events
 
-// Login attempt logging - but insecure and incomplete
 const loginAttempts = [];
 app.post("/api/log-login", (req, res) => {
   const { username, success, ip } = req.body;
   
-  // VULNERABLE: No input validation, stores sensitive data
   loginAttempts.push({
     username: username,
     password: req.body.password, // Logging passwords - major security issue
@@ -121,9 +108,7 @@ app.post("/api/log-login", (req, res) => {
   });
 });
 
-// Vulnerable audit log endpoint - exposes sensitive information
 app.get("/api/audit-logs", (req, res) => {
-  // No authentication required to view audit logs
   res.json({
     loginAttempts: loginAttempts,
     serverInfo: {
@@ -136,15 +121,11 @@ app.get("/api/audit-logs", (req, res) => {
   });
 });
 
-// VULNERABLE: Software and Data Integrity Failures  
-// A08:2021 - Untrusted dependencies and updates
 
-// Unsafe package installation endpoint
+
 app.post("/api/install-package", (req, res) => {
   const { packageName, version } = req.body;
   
-  // VULNERABLE: No validation of package source or integrity
-  // Simulates npm install without security checks
   const installCommand = version ? `${packageName}@${version}` : `${packageName}@latest`;
   
   res.json({
@@ -161,10 +142,8 @@ app.post("/api/install-package", (req, res) => {
   });
 });
 
-// Insecure update mechanism
 app.get("/api/system-update", (req, res) => {
-  // VULNERABLE: No authentication for system updates
-  // No integrity checks, no verification of update source
+
   
   res.json({
     message: "System update available",
@@ -176,14 +155,12 @@ app.get("/api/system-update", (req, res) => {
   });
 });
 
-// VULNERABLE: Security Misconfiguration (missing security headers)
 app.use((req, res, next) => {
   // No security headers set
   next();
 });
 
 app.get("/api/redirect", (req, res) => {
-  // VULNERABLE: Open Redirect, Unvalidated Redirect
   const url = req.query.url;
   res.redirect(url);
 });
