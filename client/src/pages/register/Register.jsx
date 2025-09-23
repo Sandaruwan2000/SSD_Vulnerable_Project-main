@@ -70,7 +70,7 @@ const Register = () => {
               name="name"
               onChange={handleChange}
             />
-            {err && err}
+            {err && (typeof err === "string" ? err : err?.message || JSON.stringify(err, null, 2))}
             <button onClick={handleClick}>Register</button>
           </form>
         </div>

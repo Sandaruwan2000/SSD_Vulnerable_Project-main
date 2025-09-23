@@ -13,7 +13,9 @@ const Posts = ({userId}) => {
   return (
     <div className="posts">
       {error
-        ? "Something went wrong!"
+        ? (typeof error === "string"
+            ? error
+            : error.message || JSON.stringify(error))
         : isLoading
         ? "loading"
         : data.map((post) => <Post post={post} key={post.id} />)}

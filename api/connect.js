@@ -1,8 +1,8 @@
-import mysql from "mysql"
+import mysql from "mysql";
 
-export const db = mysql.createConnection({
-  host:"localhost",
-  user:"root",
-  password:"Lamadev123",
-  database:"social"
-})
+export const db = mysql.createPool({
+  host: "localhost",
+  user: "root",
+  password: "Lahiru@00",
+  database: "social"
+});

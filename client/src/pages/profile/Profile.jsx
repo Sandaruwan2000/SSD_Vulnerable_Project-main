@@ -61,6 +61,10 @@ const Profile = () => {
     <div className="profile">
       {isLoading ? (
         "loading"
+      ) : error ? (
+        typeof error === "string"
+          ? error
+          : error.message || JSON.stringify(error, null, 2)
       ) : (
         <>
           <div className="images">

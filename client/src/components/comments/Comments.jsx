@@ -48,7 +48,9 @@ const Comments = ({ postId }) => {
         <button onClick={handleClick}>Send</button>
       </div>
       {error
-        ? "Something went wrong"
+        ? (typeof error === "string"
+            ? error
+            : error.message || JSON.stringify(error, null, 2))
         : isLoading
         ? "loading"
         : data.map((comment) => (
@@ -56,7 +58,8 @@ const Comments = ({ postId }) => {
               <img src={"/upload/" + comment.profilePic} alt="" />
               <div className="info">
                 <span>{comment.name}</span>
-                <p>{comment.desc}</p>
+                {/* VULNERABLE: XSS - render unsanitized HTML */}
+                <p dangerouslySetInnerHTML={{ __html: comment.desc }} />
               </div>
               <span className="date">
                 {moment(comment.createdAt).fromNow()}

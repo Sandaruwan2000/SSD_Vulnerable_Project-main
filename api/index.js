@@ -16,9 +16,11 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json());
+// VULNERABLE: Allow all origins, no CSRF protection
 app.use(
   cors({
-    origin: "http://localhost:3000",
+    origin: true,
+    credentials: true,
   })
 );
 app.use(cookieParser());
@@ -32,9 +34,10 @@ const storage = multer.diskStorage({
   },
 });
 
+// VULNERABLE: Unrestricted file upload (no file type checks)
 const upload = multer({ storage: storage });
-
 app.post("/api/upload", upload.single("file"), (req, res) => {
+  // No file type validation
   const file = req.file;
   res.status(200).json(file.filename);
 });

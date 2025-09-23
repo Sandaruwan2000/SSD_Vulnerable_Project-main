@@ -11,6 +11,7 @@ import LeftBar from "./components/leftBar/LeftBar";
 import RightBar from "./components/rightBar/RightBar";
 import Home from "./pages/home/Home";
 import Profile from "./pages/profile/Profile";
+import ErrorBoundary from "./components/ErrorBoundary";
 import "./style.scss";
 import { useContext } from "react";
 import { DarkModeContext } from "./context/darkModeContext";
@@ -57,24 +58,29 @@ function App() {
           <Layout />
         </ProtectedRoute>
       ),
+      errorElement: <ErrorBoundary />,
       children: [
         {
           path: "/",
           element: <Home />,
+          errorElement: <ErrorBoundary />,
         },
         {
           path: "/profile/:id",
           element: <Profile />,
+          errorElement: <ErrorBoundary />,
         },
       ],
     },
     {
       path: "/login",
       element: <Login />,
+      errorElement: <ErrorBoundary />,
     },
     {
       path: "/register",
       element: <Register />,
+      errorElement: <ErrorBoundary />,
     },
   ]);
 
