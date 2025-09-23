@@ -792,3 +792,360 @@ export const checkComponentSecurity = (req, res) => {
     });
   }
 };
+
+
+export const deserializeUserData = (req, res) => {
+  try {
+    const { serializedData } = req.body;
+    
+    const deserializedData = eval(`(${serializedData})`); 
+    res.status(200).json({
+      message: "Data deserialized successfully",
+      data: deserializedData,
+      method: "eval() deserialization",
+      warning: "Deserialized data processed without validation"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Deserialization failed",
+      details: error.message 
+    });
+  }
+};
+
+export const processUntrustedData = (req, res) => {
+  try {
+    const { userData, executeCode } = req.body;
+    
+    if (executeCode) {
+      const result = eval(executeCode); // Code injection vulnerability
+      
+      res.status(200).json({
+        message: "Code executed successfully",
+        result: result,
+        executedCode: executeCode,
+        processingMethod: "Direct code execution"
+      });
+    } else {
+      // Process user data without sanitization
+      res.status(200).json({
+        message: "User data processed",
+        processedData: userData,
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Data processing failed",
+      details: error.message 
+    });
+  }
+};
+
+// A08:2021 - Dependency Confusion Attack Simulation (SonarQube detectable)
+export const checkDependencyIntegrity = (req, res) => {
+  try {
+    // VULNERABLE: Hardcoded dependency sources - SonarQube should detect hardcoded URLs
+    const dependencySources = [
+      "http://malicious-registry.com/packages", // HTTP instead of HTTPS
+      "https://untrusted-registry.example.com",
+      "ftp://legacy-packages.internal" // Insecure protocol
+    ];
+    
+    // Simulate fetching from untrusted sources
+    const packages = [
+      { 
+        name: "express-security", 
+        version: "1.0.0", 
+        source: dependencySources[0],
+        checksum: null, // No integrity verification
+        signature: "unverified"
+      },
+      { 
+        name: "auth-helper", 
+        version: "2.1.0", 
+        source: dependencySources[1],
+        checksum: "abc123", // Weak checksum
+        signature: "self-signed"
+      }
+    ];
+    
+    res.status(200).json({
+      message: "Dependency integrity check completed",
+      packages: packages,
+      trustedSources: 0,
+      untrustedSources: dependencySources.length,
+      securityStatus: "Multiple integrity violations detected",
+      vulnerabilities: [
+        "No signature verification",
+        "Untrusted package sources",
+        "Missing checksum validation",
+        "HTTP protocol usage"
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Dependency check failed",
+      details: error.message 
+    });
+  }
+};
+
+// A08:2021 - Auto-Update Without Verification (SonarQube detectable)
+export const autoUpdateSystem = (req, res) => {
+  try {
+    const { updateSource, skipVerification } = req.body;
+    
+    // VULNERABLE: Hardcoded update URLs and credentials
+    const updateCredentials = {
+      username: "admin", // Hardcoded credentials
+      password: "update123", // SonarQube should detect this
+      apiKey: "sk-1234567890abcdef" // Exposed API key
+    };
+    
+    // VULNERABLE: Auto-update without signature verification
+    const updateConfig = {
+      autoUpdate: true,
+      source: updateSource || "http://updates.internal.com", // HTTP protocol
+      verifySignature: false, // Disabled signature verification
+      credentials: updateCredentials,
+      allowDowngrade: true, // Allow version downgrades
+      bypassSecurity: skipVerification || true
+    };
+    
+    res.status(200).json({
+      message: "Auto-update configuration applied",
+      config: updateConfig,
+      securityBypass: true,
+      risks: [
+        "No signature verification",
+        "Hardcoded credentials exposed",
+        "HTTP protocol for updates",
+        "Version downgrade allowed",
+        "Security checks bypassed"
+      ],
+      note: "System configured for automated updates without security validation"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Auto-update configuration failed",
+      details: error.message 
+    });
+  }
+};
+
+// A08:2021 - CI/CD Pipeline Vulnerabilities (SonarQube detectable)
+export const getCIPipelineSecrets = (req, res) => {
+  try {
+    // VULNERABLE: Hardcoded secrets and tokens - SonarQube should detect these
+    const secrets = {
+      DATABASE_URL: "mysql://admin:password123@db.internal.com:3306/app", // DB credentials
+      AWS_ACCESS_KEY: "AKIA1234567890ABCDEF", // AWS access key
+      AWS_SECRET_KEY: "abcdefghijklmnopqrstuvwxyz1234567890ABCD", // AWS secret
+      JWT_SECRET: "super-secret-key-123", // JWT secret
+      GITHUB_TOKEN: "ghp_1234567890abcdefghijklmnopqrstuvwxyz", // GitHub token
+      DOCKER_REGISTRY_TOKEN: "dckr_pat_1234567890abcdef", // Docker token
+      SLACK_WEBHOOK: "https://hooks.slack.com/services/T00/B00/XXXX" // Webhook URL
+    };
+    
+    // VULNERABLE: Environment configuration without encryption
+    const ciConfig = {
+      environment: "production",
+      secrets: secrets,
+      build: {
+        skipTests: true, // Skip security tests
+        skipScan: true, // Skip vulnerability scanning
+        allowUnsigned: true // Allow unsigned builds
+      },
+      deployment: {
+        requireApproval: false, // No deployment approval
+        rollbackEnabled: false, // No rollback capability
+        healthCheck: false // No health checks
+      }
+    };
+    
+    res.status(200).json({
+      message: "CI/CD pipeline configuration retrieved",
+      configuration: ciConfig,
+      securityStatus: "Multiple security violations",
+      exposedSecrets: Object.keys(secrets).length,
+      vulnerabilities: [
+        "Hardcoded secrets in configuration",
+        "Database credentials exposed",
+        "Cloud service keys exposed",
+        "No build verification",
+        "Deployment without approval"
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Pipeline configuration retrieval failed",
+      details: error.message 
+    });
+  }
+};
+
+// A08:2021 - Supply Chain Attack Simulation (SonarQube detectable)
+export const validateSupplyChain = (req, res) => {
+  try {
+    // VULNERABLE: Using Function constructor - SonarQube should detect this
+    const { packageName, packageCode } = req.body;
+    
+    // Simulate supply chain attack through dynamic code execution
+    if (packageCode) {
+      // VULNERABLE: Function constructor allows code injection
+      const maliciousFunction = new Function('return ' + packageCode)(); // SonarQube should flag this
+      
+      res.status(200).json({
+        message: "Package validation completed",
+        packageName: packageName,
+        executionResult: maliciousFunction,
+        validator: "Dynamic code execution",
+        securityBypass: "Function constructor used"
+      });
+    }
+    
+    // VULNERABLE: Weak hash algorithms for integrity checking
+    const crypto = require('crypto');
+    const weakHash = crypto.createHash('md5').update(packageName || 'default').digest('hex');
+    
+    res.status(200).json({
+      message: "Supply chain validation performed",
+      package: packageName || "unknown",
+      integrityHash: weakHash, // MD5 is cryptographically broken
+      algorithm: "MD5", // SonarQube should detect weak crypto
+      verified: false,
+      trustLevel: "unverified",
+      warnings: [
+        "Weak cryptographic algorithm used",
+        "No digital signature verification",
+        "Dynamic code execution enabled",
+        "Supply chain integrity compromised"
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Supply chain validation failed",
+      details: error.message 
+    });
+  }
+};
+
+// A08:2021 - Insecure Plugin/Extension Loading (SonarQube detectable)
+export const loadDynamicPlugin = (req, res) => {
+  try {
+    const { pluginUrl, pluginCode, autoLoad } = req.body;
+    
+    // VULNERABLE: Loading code from untrusted sources
+    if (pluginUrl) {
+      // SonarQube should detect require() with dynamic input
+      const plugin = require(pluginUrl); // Dynamic require vulnerability
+      
+      res.status(200).json({
+        message: "Plugin loaded from URL",
+        source: pluginUrl,
+        plugin: plugin,
+        securityStatus: "Untrusted code execution"
+      });
+      return;
+    }
+    
+    // VULNERABLE: Direct code execution from user input
+    if (pluginCode) {
+      try {
+        // SonarQube should detect eval() usage
+        const result = eval(pluginCode); // Code injection
+        
+        res.status(200).json({
+          message: "Plugin code executed",
+          code: pluginCode,
+          result: result,
+          executionMethod: "eval()"
+        });
+        return;
+      } catch (evalError) {
+        return res.status(500).json({
+          error: "Plugin execution failed",
+          code: pluginCode,
+          details: evalError.message
+        });
+      }
+    }
+    
+    // Default unsafe plugin configuration
+    res.status(200).json({
+      message: "Plugin system configuration",
+      autoLoad: autoLoad !== false, // Default to auto-loading
+      allowUnsigned: true, // Allow unsigned plugins
+      sandbox: false, // No sandboxing
+      permissions: "full", // Full system access
+      sources: [
+        "http://plugins.example.com", // HTTP protocol
+        "https://untrusted-plugins.net",
+        "/tmp/plugins" // Local file system
+      ],
+      securityWarnings: [
+        "Auto-loading enabled for untrusted plugins",
+        "No signature verification for plugins",
+        "Full system permissions granted",
+        "HTTP sources allowed"
+      ]
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Plugin loading failed",
+      details: error.message 
+    });
+  }
+};
+
+// A08:2021 - Code Repository Tampering (SonarQube detectable)
+export const validateCodeIntegrity = (req, res) => {
+  try {
+    // VULNERABLE: Hardcoded Git credentials and repository URLs
+    const repoCredentials = {
+      username: "deploy-bot",
+      password: "deploy-password-123", // SonarQube should detect this
+      token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // GitHub token pattern
+      sshKey: "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...", // SSH private key
+    };
+    
+    const repositories = [
+      {
+        url: "http://git.internal.com/app.git", // HTTP protocol for git
+        branch: "main",
+        verified: false,
+        lastCommit: "abc123def456",
+        signature: null, // No commit signature verification
+        credentials: repoCredentials
+      },
+      {
+        url: "https://github.com/user/sensitive-repo.git",
+        branch: "production", 
+        verified: false,
+        credentials: repoCredentials,
+        allowFork: true // Allow forked repositories
+      }
+    ];
+    
+    res.status(200).json({
+      message: "Code repository integrity check",
+      repositories: repositories,
+      credentialsExposed: true,
+      integrityStatus: "Multiple violations detected",
+      vulnerabilities: [
+        "Hardcoded repository credentials",
+        "HTTP protocol for Git operations", 
+        "No commit signature verification",
+        "SSH private keys exposed",
+        "GitHub tokens exposed"
+      ],
+      recommendations: "Implement proper secrets management and signature verification"
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      error: "Repository integrity check failed",
+      details: error.message 
+    });
+  }
+};

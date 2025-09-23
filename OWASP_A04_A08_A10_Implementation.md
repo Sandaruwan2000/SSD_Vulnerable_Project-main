@@ -64,21 +64,64 @@ Implemented inadequate logging and monitoring systems that fail to detect and al
 ## A08:2021 - Software and Data Integrity Failures
 
 ### Overview
-Implemented unsafe dependency management and update mechanisms that accept untrusted sources without verification.
+Implemented comprehensive software and data integrity failures that demonstrate vulnerabilities in dependency management, code integrity, and CI/CD pipeline security that SonarQube can detect.
 
 ### Implemented Vulnerabilities
 
-#### 1. Unsafe Package Installation
-- **Endpoint**: `POST /api/install-package`
-- **Vulnerability**: Installs packages without integrity verification
-- **Impact**: Potential supply chain attacks
-- **Integrity Failure**: No signature or checksum validation
+#### 1. Insecure Deserialization
+- **Endpoint**: `POST /api/auth/deserialize-data`
+- **Vulnerability**: Uses `eval()` for data deserialization
+- **SonarQube Detection**: Rule S1523 - "eval()" should not be used
+- **Impact**: Remote code execution through malicious serialized data
 
-#### 2. Insecure Update Mechanism
-- **Endpoint**: `GET /api/system-update`
-- **Vulnerability**: Updates from HTTP sources without verification
-- **Impact**: System compromise through malicious updates
-- **Integrity Failure**: No update source authentication
+#### 2. Untrusted Data Processing
+- **Endpoint**: `POST /api/auth/process-untrusted`
+- **Vulnerability**: Direct code execution with `eval()`
+- **SonarQube Detection**: Rule S1523 - "eval()" should not be used
+- **Impact**: Code injection allowing arbitrary JavaScript execution
+
+#### 3. Dependency Confusion Attack
+- **Endpoint**: `GET /api/auth/dependency-integrity`
+- **Vulnerability**: Hardcoded untrusted URLs and HTTP protocol usage
+- **SonarQube Detection**: Rules S1313, S5332 - Hardcoded IPs and HTTP usage
+- **Impact**: Supply chain attacks through dependency confusion
+
+#### 4. Auto-Update Without Verification
+- **Endpoint**: `POST /api/auth/auto-update`
+- **Vulnerability**: Hardcoded credentials and insecure update mechanism
+- **SonarQube Detection**: Rule S2068 - Hard-coded credentials
+- **Impact**: Unauthorized system updates and credential exposure
+
+#### 5. CI/CD Pipeline Secrets Exposure
+- **Endpoint**: `GET /api/auth/ci-secrets`
+- **Vulnerability**: Multiple hardcoded secrets and tokens
+- **SonarQube Detection**: Rule S2068 - Hard-coded credentials
+- **Impact**: Complete infrastructure compromise through exposed secrets
+
+#### 6. Supply Chain Attack Simulation
+- **Endpoint**: `POST /api/auth/supply-chain`
+- **Vulnerability**: Function constructor for dynamic code execution and weak crypto
+- **SonarQube Detection**: Rules S1523, S4426 - eval()/Function constructor and weak crypto
+- **Impact**: Supply chain compromise and weak integrity verification
+
+#### 7. Dynamic Plugin Loading
+- **Endpoint**: `POST /api/auth/load-plugin`
+- **Vulnerability**: Dynamic require() and eval() for plugin loading
+- **SonarQube Detection**: Rule S1523 - "eval()" should not be used
+- **Impact**: Arbitrary code execution through malicious plugins
+
+#### 8. Code Repository Tampering
+- **Endpoint**: `GET /api/auth/code-integrity`
+- **Vulnerability**: Hardcoded Git credentials and SSH keys
+- **SonarQube Detection**: Rule S2068 - Hard-coded credentials
+- **Impact**: Repository compromise and source code tampering
+
+### SonarQube Detection Rules for A08:2021
+- **S1523:** "eval()" and Function constructor should not be used (Critical)
+- **S2068:** Hard-coded credentials should not be used (Critical)
+- **S4426:** Cryptographic hash algorithms should not be used for security-sensitive contexts (Critical)
+- **S5332:** Using HTTP protocol is security-sensitive (High)
+- **S1313:** Hard-coded IP addresses should not be used (High)
 
 ## Client-Side Components
 

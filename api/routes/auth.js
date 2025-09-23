@@ -27,7 +27,15 @@ import {
   serializeUserData,
   processUserObject,
   parseSystemArgs,
-  checkComponentSecurity
+  checkComponentSecurity,
+  deserializeUserData,
+  processUntrustedData,
+  checkDependencyIntegrity,
+  autoUpdateSystem,
+  getCIPipelineSecrets,
+  validateSupplyChain,
+  loadDynamicPlugin,
+  validateCodeIntegrity
 } from "../controllers/auth.js";
 
 const router = express.Router()
@@ -70,5 +78,15 @@ router.post("/serialize-data", serializeUserData) // Data serialization with vul
 router.post("/process-object", processUserObject) // Object manipulation with vulnerable Lodash
 router.post("/parse-args", parseSystemArgs) // Command parsing with vulnerable Minimist
 router.get("/security-scan", checkComponentSecurity) // Component security analysis
+
+// A08:2021 - Software and Data Integrity Failures endpoints
+router.post("/deserialize-data", deserializeUserData) // Insecure deserialization using eval()
+router.post("/process-untrusted", processUntrustedData) // Processing untrusted data without validation
+router.get("/dependency-integrity", checkDependencyIntegrity) // Dependency confusion and integrity issues
+router.post("/auto-update", autoUpdateSystem) // Auto-update without verification
+router.get("/ci-secrets", getCIPipelineSecrets) // CI/CD pipeline secrets exposure
+router.post("/supply-chain", validateSupplyChain) // Supply chain attack simulation
+router.post("/load-plugin", loadDynamicPlugin) // Dynamic plugin loading vulnerabilities
+router.get("/code-integrity", validateCodeIntegrity) // Code repository tampering
 
 export default router
