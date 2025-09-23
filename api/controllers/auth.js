@@ -19,6 +19,7 @@ export const register = (req, res) => {
 };
 
 // VULNERABLE: SQL Injection, Broken Auth, Info Disclosure, No Rate Limiting
+// VULNERABLE: SQL Injection, Broken Auth, Info Disclosure, No Rate Limiting, Sensitive Data Exposure, Weak Crypto, Excessive Permissions
 export const login = (req, res) => {
   // SQL Injection vulnerability: direct string concat
   const q = `SELECT * FROM users WHERE username = '${req.body.username}'`;
@@ -28,15 +29,16 @@ export const login = (req, res) => {
     // Insecure: compare plaintext password
     if (req.body.password !== data[0].password)
       return res.status(400).json("Wrong password or username!");
-    // Broken Auth: hardcoded secret, no expiry
-    const token = jwt.sign({ id: data[0].id }, "123");
+    // Broken Auth: hardcoded secret, no expiry, weak crypto
+    const token = jwt.sign({ id: data[0].id, role: "admin" }, "123", { algorithm: "none" });
+    // Sensitive Data Exposure: expose email and token
     const { password, ...others } = data[0];
     res
       .cookie("accessToken", token, {
-        httpOnly: true,
+        httpOnly: false, // VULNERABLE: allow JS access
       })
       .status(200)
-      .json(others);
+      .json({ ...others, email: data[0].email, token });
   });
 };
 

@@ -49,6 +49,18 @@ app.use("/api/comments", commentRoutes);
 app.use("/api/likes", likeRoutes);
 app.use("/api/relationships", relationshipRoutes);
 
+// VULNERABLE: Security Misconfiguration (missing security headers)
+app.use((req, res, next) => {
+  // No security headers set
+  next();
+});
+
+app.get("/api/redirect", (req, res) => {
+  // VULNERABLE: Open Redirect, Unvalidated Redirect
+  const url = req.query.url;
+  res.redirect(url);
+});
+
 app.listen(8800, () => {
   console.log("API working!");
 });
