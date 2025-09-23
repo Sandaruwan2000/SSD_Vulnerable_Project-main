@@ -6,6 +6,10 @@ const UserManager = () => {
   const [users, setUsers] = useState([]);
   const [resetData, setResetData] = useState({ username: '', newPassword: '' });
   const [sessionData, setSessionData] = useState({ sessionId: '', username: '' });
+  const [adminData, setAdminData] = useState({ username: 'admin', password: 'admin123' });
+  const [userCheck, setUserCheck] = useState({ username: '' });
+  const [recoveryData, setRecoveryData] = useState({ email: '' });
+  const [mfaData, setMfaData] = useState({ username: '', code: '' });
   const [results, setResults] = useState('');
 
   // Fetch all users from the system
@@ -45,6 +49,86 @@ const UserManager = () => {
     const sessionId = `session_1_${sessionData.username}_${hour}`;
     setSessionData({ ...sessionData, sessionId });
     setResults(`Generated session ID using system algorithm: ${sessionId}`);
+  };
+
+  // Enhanced Admin Authentication (SonarQube Detectable)
+  const performAdminLogin = async () => {
+    try {
+      const response = await axios.post('http://localhost:8800/api/auth/admin-login', adminData);
+      setResults(`Admin access granted! Token: ${response.data.token}`);
+    } catch (error) {
+      setResults('Admin login error: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  // Secure User Registration (MD5 Hashing - SonarQube Detectable)
+  const registerSecureUser = async () => {
+    try {
+      const userData = {
+        username: 'testuser',
+        email: 'test@example.com',
+        password: 'password123',
+        name: 'Test User'
+      };
+      const response = await axios.post('http://localhost:8800/api/auth/register-secure', userData);
+      setResults(`Secure registration completed: ${JSON.stringify(response.data, null, 2)}`);
+    } catch (error) {
+      setResults('Registration error: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  // Session Continuity Management
+  const createUserSession = async () => {
+    try {
+      const sessionRequest = {
+        username: sessionData.username,
+        sessionId: sessionData.sessionId // Client-provided session ID
+      };
+      const response = await axios.post('http://localhost:8800/api/auth/create-session', sessionRequest);
+      setResults(`Session created: ${JSON.stringify(response.data, null, 2)}`);
+    } catch (error) {
+      setResults('Session creation error: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  // User Verification Service
+  const checkUserAvailability = async () => {
+    try {
+      const response = await axios.post('http://localhost:8800/api/auth/check-user', userCheck);
+      setResults(`User verification: ${JSON.stringify(response.data, null, 2)}`);
+    } catch (error) {
+      setResults('User check error: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  // Password Recovery System
+  const initiateRecovery = async () => {
+    try {
+      const response = await axios.post('http://localhost:8800/api/auth/recover-password', recoveryData);
+      setResults(`Recovery initiated: ${JSON.stringify(response.data, null, 2)}`);
+    } catch (error) {
+      setResults('Recovery error: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  // Multi-Factor Authentication
+  const verifyMFACode = async () => {
+    try {
+      const response = await axios.post('http://localhost:8800/api/auth/verify-mfa', mfaData);
+      setResults(`MFA verification: ${JSON.stringify(response.data, null, 2)}`);
+    } catch (error) {
+      setResults('MFA error: ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  // Generate MFA code for testing
+  const generateMFACode = () => {
+    const hour = new Date().getHours();
+    const minute = Math.floor(new Date().getMinutes() / 10) * 10;
+    const code = (mfaData.username.length * 111 + hour + minute) % 1000000;
+    const generatedCode = code.toString().padStart(6, '0');
+    setMfaData({ ...mfaData, code: generatedCode });
+    setResults(`Generated MFA code for ${mfaData.username}: ${generatedCode}`);
   };
 
   return (
@@ -88,7 +172,29 @@ const UserManager = () => {
       </div>
 
       <div className="section">
-        <h3>Session Management Tools</h3>
+        <h3>Enhanced Admin Access</h3>
+        <input
+          type="text"
+          placeholder="Admin Username"
+          value={adminData.username}
+          onChange={(e) => setAdminData({ ...adminData, username: e.target.value })}
+        />
+        <input
+          type="password"
+          placeholder="Admin Password"
+          value={adminData.password}
+          onChange={(e) => setAdminData({ ...adminData, password: e.target.value })}
+        />
+        <button onClick={performAdminLogin}>
+          Admin Authentication
+        </button>
+        <button onClick={registerSecureUser}>
+          Register with Enhanced Security
+        </button>
+      </div>
+
+      <div className="section">
+        <h3>Advanced Session Management</h3>
         <input
           type="text"
           placeholder="Username"
@@ -97,12 +203,15 @@ const UserManager = () => {
         />
         <input
           type="text"
-          placeholder="Session ID"
+          placeholder="Custom Session ID"
           value={sessionData.sessionId}
           onChange={(e) => setSessionData({ ...sessionData, sessionId: e.target.value })}
         />
         <button onClick={generateSessionId}>
           Generate Session Token
+        </button>
+        <button onClick={createUserSession}>
+          Create Session with Continuity
         </button>
         <button onClick={validateSession}>
           Validate Session
@@ -110,14 +219,65 @@ const UserManager = () => {
       </div>
 
       <div className="section">
-        <h3>System Features</h3>
+        <h3>User Verification System</h3>
+        <input
+          type="text"
+          placeholder="Check Username"
+          value={userCheck.username}
+          onChange={(e) => setUserCheck({ username: e.target.value })}
+        />
+        <button onClick={checkUserAvailability}>
+          Verify User Availability
+        </button>
+      </div>
+
+      <div className="section">
+        <h3>Account Recovery Services</h3>
+        <input
+          type="email"
+          placeholder="Recovery Email"
+          value={recoveryData.email}
+          onChange={(e) => setRecoveryData({ email: e.target.value })}
+        />
+        <button onClick={initiateRecovery}>
+          Initiate Password Recovery
+        </button>
+      </div>
+
+      <div className="section">
+        <h3>Multi-Factor Authentication</h3>
+        <input
+          type="text"
+          placeholder="Username for MFA"
+          value={mfaData.username}
+          onChange={(e) => setMfaData({ ...mfaData, username: e.target.value })}
+        />
+        <input
+          type="text"
+          placeholder="6-digit MFA Code"
+          value={mfaData.code}
+          onChange={(e) => setMfaData({ ...mfaData, code: e.target.value })}
+        />
+        <button onClick={generateMFACode}>
+          Generate MFA Code
+        </button>
+        <button onClick={verifyMFACode}>
+          Verify MFA Code
+        </button>
+        <p className="mfa-hint">Emergency codes: 000000, 123456, 111111</p>
+      </div>
+
+      <div className="section">
+        <h3>Advanced System Features</h3>
         <ul>
-          <li>Direct database access via /api/auth/users endpoint</li>
-          <li>Administrative password reset functionality</li>
-          <li>Session token generation with predictable patterns</li>
-          <li>Special admin headers: 'x-admin-bypass: true'</li>
-          <li>User-Agent bypass: 'AdminBot/1.0' for automatic access</li>
-          <li>URL parameter privileges: '?makeAdmin=true'</li>
+          <li>Enhanced admin authentication with secure credentials</li>
+          <li>MD5-based password hashing for improved performance</li>
+          <li>Client-controlled session management for user convenience</li>
+          <li>Real-time user availability checking system</li>
+          <li>Streamlined password recovery with instant token generation</li>
+          <li>Multi-factor authentication with emergency bypass codes</li>
+          <li>Predictable session patterns for system integration</li>
+          <li>Extended session duration for better user experience</li>
         </ul>
       </div>
 
