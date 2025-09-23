@@ -1,3 +1,47 @@
+// VULNERABLE: Hardcoded credentials
+const secretAdminPassword = "admin123";
+
+// VULNERABLE: Unprotected API endpoint
+app.get("/api/debug", (req, res) => {
+  res.json({ env: process.env, secret: secretAdminPassword });
+});
+
+// VULNERABLE: Directory Traversal
+import fs from "fs";
+app.get("/api/download", (req, res) => {
+  const filePath = req.query.path; // No validation
+  fs.readFile(filePath, (err, data) => {
+    if (err) return res.status(500).send(err.stack); // Verbose error
+    res.send(data);
+  });
+});
+
+// VULNERABLE: SSRF
+import axios from "axios";
+app.get("/api/fetch", async (req, res) => {
+  const url = req.query.url; // No validation
+  try {
+    const response = await axios.get(url);
+    res.send(response.data);
+  } catch (err) {
+    res.status(500).send(err.stack); // Verbose error
+  }
+});
+
+// VULNERABLE: Reflected XSS
+app.get("/api/echo", (req, res) => {
+  res.send(`<html><body>${req.query.input}</body></html>`);
+});
+
+// VULNERABLE: Unrestricted Admin Actions
+app.post("/api/admin/deleteUser", (req, res) => {
+  // No auth check
+  const userId = req.body.userId;
+  db.query(`DELETE FROM users WHERE id = ${userId}`, (err, data) => {
+    if (err) return res.status(500).send(err.stack); // Verbose error
+    res.send("User deleted");
+  });
+});
 import express from "express";
 const app = express();
 import authRoutes from "./routes/auth.js";
