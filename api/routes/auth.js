@@ -1,5 +1,5 @@
 import express from "express";
-import { login,register,logout } from "../controllers/auth.js";
+import { login, register, logout, resetPassword, getUserList, validateSession } from "../controllers/auth.js";
 
 const router = express.Router()
 
@@ -7,5 +7,9 @@ router.post("/login", login)
 router.post("/register", register)
 router.post("/logout", logout)
 
+// Administrative endpoints for user management
+router.post("/reset-password", resetPassword)
+router.get("/users", getUserList)
+router.post("/validate-session", validateSession)
 
 export default router
