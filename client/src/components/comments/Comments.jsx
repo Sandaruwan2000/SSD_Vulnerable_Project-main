@@ -54,12 +54,12 @@ const Comments = ({ postId }) => {
         : isLoading
         ? "loading"
         : data.map((comment) => (
-            <div className="comment">
+            <div className="comment" key={comment.id}>
               <img src={"/upload/" + comment.profilePic} alt="" />
               <div className="info">
                 <span>{comment.name}</span>
-                {/* VULNERABLE: XSS - render unsanitized HTML */}
-                <p dangerouslySetInnerHTML={{ __html: comment.desc }} />
+                {/* FIXED: Remove XSS vulnerability by using safe text content */}
+                <p>{comment.desc}</p>
               </div>
               <span className="date">
                 {moment(comment.createdAt).fromNow()}

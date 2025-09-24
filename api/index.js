@@ -1,6 +1,5 @@
 
 import express from "express";
-const app = express();
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import postRoutes from "./routes/posts.js";
@@ -10,45 +9,83 @@ import relationshipRoutes from "./routes/relationships.js";
 import cors from "cors";
 import multer from "multer";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import dotenv from "dotenv";
+import { generalLimiter } from "./controllers/auth_secure.js";
+import { requireAdmin } from "./middleware/auth.js";
+import path from "path";
 
-const secretAdminPassword = "admin123";
+// Load environment variables
+dotenv.config();
 
-app.get("/api/debug", (req, res) => {
-  res.json({ env: process.env, secret: secretAdminPassword });
-});
+const app = express();
 
-import fs from "fs";
-app.get("/api/download", (req, res) => {
-  const filePath = req.query.path; // No validation
-  fs.readFile(filePath, (err, data) => {
-    if (err) return res.status(500).send(err.stack); // Verbose error
-    res.send(data);
-  });
-});
-
-import axios from "axios";
-app.get("/api/fetch", async (req, res) => {
-  const url = req.query.url; // No validation
-  try {
-    const response = await axios.get(url);
-    res.send(response.data);
-  } catch (err) {
-    res.status(500).send(err.stack); // Verbose error
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
   }
-});
+}));
 
-app.get("/api/echo", (req, res) => {
-  res.send(`<html><body>${req.query.input}</body></html>`);
-});
+// Rate limiting
+app.use(generalLimiter);
 
-app.post("/api/admin/deleteUser", (req, res) => {
-  // No auth check
-  const userId = req.body.userId;
-  db.query(`DELETE FROM users WHERE id = ${userId}`, (err, data) => {
-    if (err) return res.status(500).send(err.stack); // Verbose error
-    res.send("User deleted");
+// CORS configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// Remove vulnerable debug endpoint - replaced with secure health check
+app.get("/api/health", (req, res) => {
+  res.status(200).json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version || "1.0.0"
   });
 });
+
+// Remove vulnerable file download endpoint - replaced with secure file serving
+app.get("/api/files/:filename", requireAdmin, (req, res) => {
+  const filename = req.params.filename;
+  
+  // Validate filename to prevent directory traversal
+  if (!/^[a-zA-Z0-9._-]+$/.test(filename)) {
+    return res.status(400).json({ error: "Invalid filename" });
+  }
+  
+  const safePath = path.join(__dirname, 'uploads', filename);
+  
+  // Ensure the path is within the uploads directory
+  if (!safePath.startsWith(path.join(__dirname, 'uploads'))) {
+    return res.status(403).json({ error: "Access denied" });
+  }
+  
+  res.sendFile(safePath, (err) => {
+    if (err) {
+      res.status(404).json({ error: "File not found" });
+    }
+  });
+});
+
+// Remove vulnerable URL fetch endpoint - not replaced as it's unnecessary
+// Remove vulnerable echo endpoint - not replaced as it's unnecessary
+
+// Remove vulnerable admin delete endpoint - will be handled through secure routes
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Credentials", true);
