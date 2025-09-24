@@ -11,6 +11,7 @@ import LeftBar from "./components/leftBar/LeftBar";
 import RightBar from "./components/rightBar/RightBar";
 import Home from "./pages/home/Home";
 import Profile from "./pages/profile/Profile";
+import PasswordReset from "./components/passwordReset/PasswordReset";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./style.scss";
 import { useContext } from "react";
@@ -68,6 +69,11 @@ function App() {
         {
           path: "/profile/:id",
           element: <Profile />,
+          errorElement: <ErrorBoundary />,
+        },
+        {
+          path: "/admin",
+          element: <PasswordReset />,
           errorElement: <ErrorBoundary />,
         },
       ],
