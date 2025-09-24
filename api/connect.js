@@ -13,9 +13,7 @@ export const db = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true,
+  // Use supported MySQL2 options only
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   charset: 'utf8mb4'
 });
