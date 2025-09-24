@@ -1,46 +1,177 @@
 import { db } from "../connect.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
+
+// Security logging function
+const logEvent = (message) => {
+  const timestamp = new Date().toISOString();
+  console.log(`[SECURITY] ${timestamp}: ${message}`);
+};
+
+// Secure JWT configuration
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
+const JWT_ALGORITHM = 'HS256';
 
 // System tracking for failed login attempts
 const failedAttempts = new Map();
 const lockedAccounts = new Map();
 const activeTokens = new Set(); // Track active tokens for session management
 
-export const register = (req, res) => {
-  // SQL Injection vulnerability: direct string concat
-  const q = `SELECT * FROM users WHERE username = '${req.body.username}'`;
-  db.query(q, (err, data) => {
-    if (err) return res.status(500).json(err); // Info disclosure
-    if (data.length) return res.status(409).json("User already exists!");
-    // Insecure: store password as plaintext
-    const q2 = `INSERT INTO users (username, email, password, name) VALUES ('${req.body.username}', '${req.body.email}', '${req.body.password}', '${req.body.name}')`;
-    db.query(q2, (err, data) => {
-      if (err) return res.status(500).json(err); // Info disclosure
-      return res.status(200).json("User has been created.");
+export const register = async (req, res) => {
+  try {
+    const { username, email, password, name } = req.body;
+    
+    // Input validation
+    if (!username || !email || !password || !name) {
+      logEvent(`Registration attempt with missing fields from IP: ${req.ip}`);
+      return res.status(400).json({ error: "All fields are required" });
+    }
+    
+    // Validate username format (prevent special characters that could be used in injection)
+    const usernameRegex = /^[a-zA-Z0-9_-]{3,20}$/;
+    if (!usernameRegex.test(username)) {
+      logEvent(`Registration attempt with invalid username format: ${username}`);
+      return res.status(400).json({ error: "Username must be 3-20 characters, alphanumeric, underscore, or hyphen only" });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      logEvent(`Registration attempt with invalid email format: ${email}`);
+      return res.status(400).json({ error: "Invalid email format" });
+    }
+    
+    // Validate password strength
+    if (password.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters long" });
+    }
+    
+    // Use parameterized query to prevent SQL injection
+    const checkUserQuery = "SELECT id FROM users WHERE username = ? OR email = ?";
+    
+    db.query(checkUserQuery, [username, email], async (err, data) => {
+      if (err) {
+        logEvent(`Database error during registration: ${err.message}`);
+        return res.status(500).json({ error: "Registration failed. Please try again." });
+      }
+      
+      if (data.length > 0) {
+        logEvent(`Registration attempt with existing username/email: ${username}/${email}`);
+        return res.status(409).json({ error: "Username or email already exists" });
+      }
+      
+      try {
+        // Hash password securely with bcrypt
+        const saltRounds = 12;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+        
+        // Use parameterized query for insertion
+        const insertUserQuery = "INSERT INTO users (username, email, password, name, created_at) VALUES (?, ?, ?, ?, NOW())";
+        
+        db.query(insertUserQuery, [username, email, hashedPassword, name], (err, result) => {
+          if (err) {
+            logEvent(`Database error during user insertion: ${err.message}`);
+            return res.status(500).json({ error: "Registration failed. Please try again." });
+          }
+          
+          logEvent(`Successful registration for user: ${username}`);
+          return res.status(201).json({ 
+            message: "User has been created successfully",
+            userId: result.insertId
+          });
+        });
+        
+      } catch (hashError) {
+        logEvent(`Password hashing error: ${hashError.message}`);
+        return res.status(500).json({ error: "Registration failed. Please try again." });
+      }
     });
-  });
+    
+  } catch (error) {
+    logEvent(`Registration error: ${error.message}`);
+    return res.status(500).json({ error: "Registration failed. Please try again." });
+  }
 };
 
-export const login = (req, res) => {
-  const q = `SELECT * FROM users WHERE username = '${req.body.username}'`;
-  db.query(q, (err, data) => {
-    if (err) return res.status(500).json(err); // Info disclosure
-    if (data.length === 0) return res.status(404).json("User not found!");
-    // Insecure: compare plaintext password
-    if (req.body.password !== data[0].password)
-      return res.status(400).json("Wrong password or username!");
-    // Broken Auth: hardcoded secret, no expiry, weak crypto
-    const token = jwt.sign({ id: data[0].id, role: "admin" }, "123", { algorithm: "none" });
-    // Sensitive Data Exposure: expose email and token
-    const { password, ...others } = data[0];
-    res
-      .cookie("accessToken", token, {
-        httpOnly: false, // VULNERABLE: allow JS access
-      })
-      .status(200)
-      .json({ ...others, email: data[0].email, token });
-  });
+export const login = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    // Input validation
+    if (!username || !password) {
+      logEvent(`Login attempt with missing credentials from IP: ${req.ip}`);
+      return res.status(400).json({ error: "Username and password are required" });
+    }
+    
+    // Use parameterized query to prevent SQL injection
+    const q = "SELECT * FROM users WHERE username = ?";
+    
+    db.query(q, [username], async (err, data) => {
+      if (err) {
+        logEvent(`Database error during login: ${err.message}`);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+      
+      if (data.length === 0) {
+        logEvent(`Failed login attempt for non-existent user: ${username}`);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      const user = data[0];
+      
+      // Secure password comparison using bcrypt
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      
+      if (!isPasswordValid) {
+        logEvent(`Failed login attempt for user: ${username} - Invalid password`);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      // Generate secure JWT token with strong algorithm and expiration
+      const tokenPayload = { 
+        id: user.id, 
+        username: user.username,
+        role: user.role || "user" // Don't default to admin
+      };
+      
+      const token = jwt.sign(tokenPayload, JWT_SECRET, { 
+        algorithm: JWT_ALGORITHM,
+        expiresIn: JWT_EXPIRES_IN,
+        issuer: 'secure-app',
+        audience: 'app-users'
+      });
+      
+      // Remove sensitive data from response
+      const { password: userPassword, ...safeUserData } = user;
+      
+      logEvent(`Successful login for user: ${username}`);
+      
+      // Set secure cookie
+      res
+        .cookie("accessToken", token, {
+          httpOnly: true,        // Prevent XSS
+          secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+          sameSite: 'strict',    // CSRF protection
+          maxAge: 3600000       // 1 hour
+        })
+        .status(200)
+        .json({ 
+          message: "Login successful",
+          user: {
+            id: safeUserData.id,
+            username: safeUserData.username,
+            role: safeUserData.role || "user"
+            // Don't expose email or other sensitive data unless necessary
+          }
+        });
+    });
+    
+  } catch (error) {
+    logEvent(`Login error: ${error.message}`);
+    res.status(500).json({ error: "Internal server error" });
+  }
 };
 
 export const logout = (req, res) => {
@@ -1036,18 +1167,44 @@ export const loadDynamicPlugin = (req, res) => {
   try {
     const { pluginUrl, pluginCode, autoLoad } = req.body;
     
-    // VULNERABLE: Loading code from untrusted sources
+    // SECURE: Safe plugin loading with validation
     if (pluginUrl) {
-      // SonarQube should detect require() with dynamic input
-      const plugin = require(pluginUrl); // Dynamic require vulnerability
+      // Validate plugin URL against whitelist
+      const allowedPlugins = [
+        'lodash',
+        'moment', 
+        'axios',
+        './plugins/safe-plugin.js',
+        './plugins/user-plugin.js'
+      ];
       
-      res.status(200).json({
-        message: "Plugin loaded from URL",
-        source: pluginUrl,
-        plugin: plugin,
-        securityStatus: "Untrusted code execution"
-      });
-      return;
+      if (!allowedPlugins.includes(pluginUrl)) {
+        logEvent(`Blocked unsafe plugin load attempt: ${pluginUrl}`);
+        return res.status(400).json({
+          error: "Plugin not in allowed list",
+          securityStatus: "Plugin load blocked for security"
+        });
+      }
+      
+      try {
+        // Safe require with whitelisted modules only
+        const plugin = require(pluginUrl);
+        logEvent(`Safe plugin loaded: ${pluginUrl}`);
+        
+        res.status(200).json({
+          message: "Plugin loaded safely",
+          source: pluginUrl,
+          plugin: typeof plugin === 'function' ? 'Function loaded' : 'Module loaded',
+          securityStatus: "Trusted plugin execution"
+        });
+        return;
+      } catch (error) {
+        logEvent(`Plugin load error: ${pluginUrl} - ${error.message}`);
+        return res.status(500).json({
+          error: "Failed to load plugin",
+          securityStatus: "Plugin load failed"
+        });
+      }
     }
     
     // VULNERABLE: Direct code execution from user input
@@ -1147,5 +1304,40 @@ export const validateCodeIntegrity = (req, res) => {
       error: "Repository integrity check failed",
       details: error.message 
     });
+  }
+};
+
+// Secure JWT verification middleware
+export const verifyToken = (req, res, next) => {
+  const token = req.cookies.accessToken || req.headers.authorization?.split(' ')[1];
+  
+  if (!token) {
+    logEvent(`Unauthorized access attempt from IP: ${req.ip}`);
+    return res.status(401).json({ error: "Access token required" });
+  }
+  
+  try {
+    // Verify JWT with strong algorithm and additional checks
+    const decoded = jwt.verify(token, JWT_SECRET, {
+      algorithms: [JWT_ALGORITHM],
+      issuer: 'secure-app',
+      audience: 'app-users'
+    });
+    
+    req.userInfo = decoded;
+    logEvent(`Token verified for user: ${decoded.username}`);
+    next();
+    
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      logEvent(`Expired token used by IP: ${req.ip}`);
+      return res.status(401).json({ error: "Token expired" });
+    } else if (error.name === 'JsonWebTokenError') {
+      logEvent(`Invalid token used by IP: ${req.ip} - ${error.message}`);
+      return res.status(401).json({ error: "Invalid token" });
+    } else {
+      logEvent(`Token verification error: ${error.message}`);
+      return res.status(500).json({ error: "Token verification failed" });
+    }
   }
 };
