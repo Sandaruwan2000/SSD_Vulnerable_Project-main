@@ -9,83 +9,6 @@ const logEvent = (message) => {
   console.log(`[SECURITY] ${timestamp}: ${message}`);
 };
 
-// -------------------
-// Input Validation Utilities
-// -------------------
-
-/**
- * Comprehensive input validation for different data types
- */
-const inputValidator = {
-  // Username validation (3-30 chars, alphanumeric + underscore/hyphen)
-  username: (input) => {
-    if (!input || typeof input !== 'string') return false;
-    const regex = /^[a-zA-Z0-9_-]{3,30}$/;
-    return regex.test(input.trim());
-  },
-  
-  // Email validation with RFC 5322 compliance
-  email: (input) => {
-    if (!input || typeof input !== 'string') return false;
-    const regex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
-    return regex.test(input.trim()) && input.length <= 254;
-  },
-  
-  // Password strength validation
-  password: (input) => {
-    if (!input || typeof input !== 'string') return false;
-    if (input.length < 8 || input.length > 128) return false;
-    
-    // Check for at least one lowercase, uppercase, digit, and special character
-    const hasLower = /[a-z]/.test(input);
-    const hasUpper = /[A-Z]/.test(input);
-    const hasDigit = /\d/.test(input);
-    const hasSpecial = /[@$!%*?&]/.test(input);
-    
-    return hasLower && hasUpper && hasDigit && hasSpecial;
-  },
-  
-  // Name validation (letters, spaces, apostrophes, hyphens)
-  name: (input) => {
-    if (!input || typeof input !== 'string') return false;
-    const regex = /^[a-zA-Z\s'-]{1,50}$/;
-    return regex.test(input.trim());
-  },
-  
-  // ID validation (positive integers only)
-  id: (input) => {
-    const num = parseInt(input, 10);
-    return !isNaN(num) && num > 0 && num <= Number.MAX_SAFE_INTEGER;
-  }
-};
-
-/**
- * Sanitizes input by removing dangerous characters
- */
-const sanitizeInput = (input, type = 'general') => {
-  if (!input || typeof input !== 'string') return '';
-  
-  // Remove null bytes and control characters
-  let sanitized = input.replace(/[\x00-\x1f\x7f]/g, '');
-  
-  switch (type) {
-    case 'html':
-      // Escape HTML characters
-      sanitized = sanitized
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
-      break;
-    default:
-      // General sanitization - remove potentially dangerous characters
-      sanitized = sanitized.replace(/[<>'";&|`${}[\]\\]/g, '');
-  }
-  
-  return sanitized.trim();
-};
-
 // Secure JWT configuration
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
@@ -284,79 +207,32 @@ export const adminLogin = (req, res) => {
   }
 };
 
-// A07:2021 - Identification and Authentication Failures 
-// FIXED: Secure registration with proper SQL injection prevention
-export const registerSecure = async (req, res) => {
+// A07:2021 - Identification and Authentication Failures
+// Vulnerability 2: Weak cryptographic practices (SonarQube detectable - weak hashing)
+export const registerSecure = (req, res) => {
   const { username, email, password, name } = req.body;
   
-  // Input validation
-  if (!username || !email || !password || !name) {
-    return res.status(400).json({ error: "All fields are required" });
-  }
-  
-  // Validate input formats
-  const usernameRegex = /^[a-zA-Z0-9_-]{3,30}$/;
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  
-  if (!usernameRegex.test(username)) {
-    return res.status(400).json({ error: "Invalid username format. Use 3-30 alphanumeric characters, underscores, or hyphens." });
-  }
-  
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ error: "Invalid email format" });
-  }
-  
-  if (password.length < 8) {
-    return res.status(400).json({ error: "Password must be at least 8 characters long" });
-  }
-  
-  try {
-    // SECURE: Use parameterized query to prevent SQL injection
-    const checkUserQuery = "SELECT id FROM users WHERE username = ? OR email = ?";
+  // Check if user exists
+  const q = `SELECT * FROM users WHERE username = '${username}'`;
+  db.query(q, (err, data) => {
+    if (err) return res.status(500).json(err);
+    if (data.length) return res.status(409).json("User already exists!");
     
-    db.query(checkUserQuery, [username, email], async (err, data) => {
-      if (err) {
-        logEvent(`Database error during registration: ${err.message}`);
-        return res.status(500).json({ error: "Registration failed. Please try again." });
-      }
-      
-      if (data.length > 0) {
-        logEvent(`Registration attempt with existing username/email: ${username}/${email}`);
-        return res.status(409).json({ error: "Username or email already exists" });
-      }
-      
-      try {
-        // SECURE: Strong password hashing with bcrypt instead of MD5
-        const saltRounds = 12;
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
-        
-        // SECURE: Use parameterized query for insertion
-        const insertQuery = "INSERT INTO users (username, email, password, name, created_at) VALUES (?, ?, ?, ?, NOW())";
-        
-        db.query(insertQuery, [username, email, hashedPassword, name], (err, result) => {
-          if (err) {
-            logEvent(`Database error during user insertion: ${err.message}`);
-            return res.status(500).json({ error: "Registration failed. Please try again." });
-          }
-          
-          logEvent(`New user registered successfully: ${username}`);
-          res.status(201).json({
-            message: "User registered successfully",
-            userId: result.insertId,
-            username: username
-          });
-        });
-        
-      } catch (hashError) {
-        logEvent(`Password hashing error: ${hashError.message}`);
-        return res.status(500).json({ error: "Registration failed. Please try again." });
-      }
+    // Weak hashing - SonarQube should detect MD5 usage
+    const md5Hash = crypto.createHash('md5'); // MD5 is cryptographically weak
+    md5Hash.update(password);
+    const hashedPassword = md5Hash.digest('hex');
+    
+    const insertQuery = `INSERT INTO users (username, email, password, name) VALUES ('${username}', '${email}', '${hashedPassword}', '${name}')`;
+    db.query(insertQuery, (err, result) => {
+      if (err) return res.status(500).json(err);
+      res.status(200).json({
+        message: "User registered with enhanced security",
+        userId: result.insertId,
+        hashMethod: "MD5" // Exposing hash method
+      });
     });
-    
-  } catch (error) {
-    logEvent(`Registration error: ${error.message}`);
-    return res.status(500).json({ error: "Registration failed. Please try again." });
-  }
+  });
 };
 
 // Session token generation utility
@@ -588,139 +464,64 @@ export const quickAccountRecovery = (req, res) => {
   });
 };
 
-// SECURE: Individual password update with proper authentication and SQL injection prevention
-export const securePasswordUpdate = async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  const userId = req.userId; // Assuming middleware sets this from JWT token
+// Insecure Design Issue 3: Bulk Password Update Without Authentication
+export const bulkPasswordUpdate = (req, res) => {
+  const { newPassword, userPattern } = req.body;
   
-  // Input validation
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: "Current password and new password are required" });
+  // Design flaw: Allows bulk password changes without proper authorization
+  // No authentication check, no individual user consent
+  
+  let query;
+  if (userPattern) {
+    // SQL injection vulnerability in pattern matching
+    query = `UPDATE users SET password = '${newPassword}' WHERE username LIKE '%${userPattern}%' OR email LIKE '%${userPattern}%'`;
+  } else {
+    // Updates ALL users if no pattern provided
+    query = `UPDATE users SET password = '${newPassword}'`;
   }
   
-  // Password strength validation
-  if (newPassword.length < 8) {
-    return res.status(400).json({ error: "New password must be at least 8 characters long" });
-  }
-  
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/;
-  if (!passwordRegex.test(newPassword)) {
-    return res.status(400).json({ 
-      error: "Password must contain at least one lowercase letter, uppercase letter, number, and special character" 
-    });
-  }
-  
-  try {
-    // SECURE: Parameterized query to get current user
-    const getUserQuery = "SELECT id, password FROM users WHERE id = ?";
+  db.query(query, (err, result) => {
+    if (err) return res.status(500).json(err);
     
-    db.query(getUserQuery, [userId], async (err, data) => {
-      if (err) {
-        logEvent(`Database error during password update: ${err.message}`);
-        return res.status(500).json({ error: "Password update failed" });
-      }
-      
-      if (data.length === 0) {
-        return res.status(404).json({ error: "User not found" });
-      }
-      
-      const user = data[0];
-      
-      // Verify current password
-      const isCurrentPasswordValid = await bcrypt.compare(currentPassword, user.password);
-      if (!isCurrentPasswordValid) {
-        logEvent(`Failed password update attempt - invalid current password for user ID: ${userId}`);
-        return res.status(401).json({ error: "Current password is incorrect" });
-      }
-      
-      // Hash new password
-      const saltRounds = 12;
-      const hashedNewPassword = await bcrypt.hash(newPassword, saltRounds);
-      
-      // SECURE: Parameterized query to update password
-      const updateQuery = "UPDATE users SET password = ?, password_updated_at = NOW() WHERE id = ?";
-      
-      db.query(updateQuery, [hashedNewPassword, userId], (err, result) => {
-        if (err) {
-          logEvent(`Database error during password update: ${err.message}`);
-          return res.status(500).json({ error: "Password update failed" });
-        }
-        
-        logEvent(`Password updated successfully for user ID: ${userId}`);
-        res.status(200).json({
-          message: "Password updated successfully",
-          timestamp: new Date().toISOString()
-        });
-      });
+    res.status(200).json({
+      message: "Bulk password update completed",
+      affectedUsers: result.affectedRows,
+      newPassword: newPassword, // Exposing new password
+      pattern: userPattern || "all users",
+      timestamp: new Date().toISOString(),
+      note: "All matching accounts have been updated with the new password for system maintenance"
     });
-    
-  } catch (error) {
-    logEvent(`Password update error: ${error.message}`);
-    return res.status(500).json({ error: "Password update failed" });
-  }
+  });
 };
 
 // Insecure Design Issue 4: Account Deletion Without Verification
-export const secureAccountDeletion = (req, res) => {
-  const { password, confirmationToken } = req.body;
-  const userId = req.userId; // From authentication middleware
+export const quickAccountDeletion = (req, res) => {
+  const { email, reason } = req.body;
   
-  // Input validation
-  if (!password) {
-    return res.status(400).json({ error: "Password confirmation is required" });
-  }
+  // Design flaw: Allows account deletion without proper verification
+  // No confirmation process, no backup, no recovery option
   
-  if (!confirmationToken || confirmationToken !== "DELETE_MY_ACCOUNT") {
-    return res.status(400).json({ 
-      error: "Confirmation token required. Set confirmationToken to 'DELETE_MY_ACCOUNT'" 
-    });
-  }
-  
-  try {
-    // SECURE: Parameterized query to get user data
-    const getUserQuery = "SELECT id, username, email, password FROM users WHERE id = ?";
+  const q = `DELETE FROM users WHERE email = '${email}'`;
+  db.query(q, (err, result) => {
+    if (err) return res.status(500).json(err);
     
-    db.query(getUserQuery, [userId], async (err, data) => {
-      if (err) {
-        logEvent(`Database error during account deletion: ${err.message}`);
-        return res.status(500).json({ error: "Account deletion failed" });
-      }
-      
-      if (data.length === 0) {
-        return res.status(404).json({ error: "User account not found" });
-      }
-      
-      const user = data[0];
-      
-      // Verify password before deletion
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        logEvent(`Failed account deletion attempt - invalid password for user ID: ${userId}`);
-        return res.status(401).json({ error: "Invalid password" });
-      }
-      
-      // SECURE: Soft delete with parameterized query (recommended approach)
-      const deleteQuery = "UPDATE users SET deleted_at = NOW(), status = 'deleted' WHERE id = ?";
-      
-      db.query(deleteQuery, [userId], (err, result) => {
-        if (err) {
-          logEvent(`Database error during account deletion: ${err.message}`);
-          return res.status(500).json({ error: "Account deletion failed" });
-        }
-        
-        logEvent(`Account soft deleted for user: ${user.username} (ID: ${userId})`);
-        res.status(200).json({
-          message: "Account has been deactivated",
-          timestamp: new Date().toISOString(),
-          note: "Your account has been deactivated. Contact support within 30 days to reactivate."
-        });
+    if (result.affectedRows === 0) {
+      return res.status(404).json({
+        error: "Account not found",
+        email: email,
+        availableEmails: "Use /api/auth/admin/passwords to see all emails" // Helpful hint for attackers
       });
-    });
+    }
     
-  } catch (error) {
-    logEvent(`Account deletion error: ${error.message}`);
-    return res.status(500).json({ error: "Account deletion failed" });
-  }
+    res.status(200).json({
+      message: "Account successfully deleted",
+      deletedEmail: email,
+      reason: reason || "No reason provided",
+      deletionTime: new Date().toISOString(),
+      note: "Account has been permanently removed from the system",
+      recovery: "Account cannot be recovered - this action is permanent"
+    });
+  });
 };
 
 // Insecure Design Issue 5: Administrative Override System
@@ -773,41 +574,32 @@ export const adminOverride = (req, res) => {
   });
 };
 
-// SECURE: Username availability check without timing attacks or SQL injection
-export const checkUsernameAvailability = (req, res) => {
+// Additional Vulnerability 4: Account enumeration through timing attacks
+export const checkUserExists = (req, res) => {
   const { username } = req.body;
   
-  // Input validation
-  if (!username) {
-    return res.status(400).json({ error: "Username is required" });
-  }
-  
-  // Validate username format
-  const usernameRegex = /^[a-zA-Z0-9_-]{3,30}$/;
-  if (!usernameRegex.test(username)) {
-    return res.status(400).json({ 
-      error: "Invalid username format. Use 3-30 alphanumeric characters, underscores, or hyphens." 
-    });
-  }
-  
-  // SECURE: Parameterized query to prevent SQL injection
-  const q = "SELECT COUNT(*) as count FROM users WHERE username = ? AND (status IS NULL OR status != 'deleted')";
-  
-  db.query(q, [username], (err, data) => {
-    if (err) {
-      logEvent(`Database error during username availability check: ${err.message}`);
-      return res.status(500).json({ error: "Availability check failed" });
-    }
+  const q = `SELECT username FROM users WHERE username = '${username}'`;
+  db.query(q, (err, data) => {
+    if (err) return res.status(500).json(err);
     
-    const userExists = data[0].count > 0;
-    
-    // SECURE: Consistent response time to prevent timing attacks
-    setTimeout(() => {
+    if (data.length > 0) {
+      // Simulate complex database operation for existing users
+      setTimeout(() => {
+        res.status(200).json({
+          exists: true,
+          message: "User found in system",
+          lastLogin: "2024-01-15T10:30:00Z", // Information disclosure
+          accountStatus: "active"
+        });
+      }, 150); // Longer delay for existing users
+    } else {
+      // Quick response for non-existing users
       res.status(200).json({
-        available: !userExists,
-        message: userExists ? "Username is not available" : "Username is available"
+        exists: false,
+        message: "User not found",
+        suggestion: "This username is available for registration"
       });
-    }, 100); // Consistent delay for all responses
+    }
   });
 };
 
