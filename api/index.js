@@ -24,117 +24,6 @@ app.use(cookieParser());
 // Security Logging Utility
 // -------------------
 
-// -------------------
-// SSRF Protection Utility Functions
-// -------------------
-const dns = require('dns').promises;
-
-/**
- * Validates if a URL is safe for server-side requests
- * @param {string} url - The URL to validate
- * @returns {Promise<{isValid: boolean, error?: string, parsedUrl?: URL}>}
- */
-async function validateUrlForSSRF(url) {
-  if (!url || typeof url !== 'string') {
-    return { isValid: false, error: "Invalid URL provided" };
-  }
-  
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(url);
-  } catch (error) {
-    return { isValid: false, error: "Malformed URL" };
-  }
-  
-  // Define security policies
-  const allowedSchemes = ["http:", "https:"];
-  const allowedDomains = [
-    "api.example.com",
-    "data.example.com", 
-    "secure-api.example.org",
-    "public-data.trusted.com",
-    "jsonplaceholder.typicode.com",
-    "httpbin.org"
-  ];
-  
-  const cloudMetadataBlacklist = [
-    '169.254.169.254', '192.0.0.192', '100.100.100.200',
-    'metadata.google.internal', 'instance-data.ec2.internal'
-  ];
-  
-  const blockedPorts = [
-    22, 23, 25, 53, 69, 110, 143, 161, 389, 445, 993, 995, 
-    1433, 1521, 3306, 3389, 5432, 5984, 6379, 8086, 9200, 
-    11211, 27017, 50070
-  ];
-  
-  // Check cloud metadata access
-  if (cloudMetadataBlacklist.includes(parsedUrl.hostname)) {
-    return { isValid: false, error: "Access to cloud metadata services is not allowed" };
-  }
-  
-  // Validate scheme
-  if (!allowedSchemes.includes(parsedUrl.protocol)) {
-    return { isValid: false, error: "Invalid URL scheme. Only HTTP and HTTPS are allowed" };
-  }
-  
-  // Validate domain
-  const isAllowedDomain = allowedDomains.some(domain => {
-    return parsedUrl.hostname === domain || parsedUrl.hostname.endsWith('.' + domain);
-  });
-  
-  if (!isAllowedDomain) {
-    return { 
-      isValid: false, 
-      error: "Domain not in allowed list",
-      allowedDomains: allowedDomains 
-    };
-  }
-  
-  // Check for direct IP access and private ranges
-  const privateIpRanges = [
-    /^127\./, /^10\./, /^172\.(1[6-9]|2[0-9]|3[0-1])\./, /^192\.168\./,
-    /^169\.254\./, /^0\./, /^224\./, /^240\./, /^::1$/, /^::/, 
-    /^fc00:/, /^fe80:/, /^ff00:/
-  ];
-  
-  const isIpAddress = /^\d+\.\d+\.\d+\.\d+$/.test(parsedUrl.hostname) || 
-                     /^[0-9a-fA-F:]+$/.test(parsedUrl.hostname);
-  
-  if (isIpAddress && privateIpRanges.some(range => range.test(parsedUrl.hostname))) {
-    return { isValid: false, error: "Direct access to IP addresses is not allowed" };
-  }
-  
-  // Check ports
-  const port = parsedUrl.port ? parseInt(parsedUrl.port) : 
-               (parsedUrl.protocol === 'https:' ? 443 : 80);
-  
-  if (blockedPorts.includes(port)) {
-    return { isValid: false, error: `Access to port ${port} is not allowed` };
-  }
-  
-  // DNS resolution validation
-  try {
-    const addresses = await dns.lookup(parsedUrl.hostname, { all: true });
-    
-    for (const addr of addresses) {
-      const isPrivate = privateIpRanges.some(range => range.test(addr.address));
-      if (isPrivate) {
-        return { 
-          isValid: false, 
-          error: "Hostname resolves to a private IP address" 
-        };
-      }
-    }
-  } catch (dnsError) {
-    return { isValid: false, error: "Unable to resolve hostname" };
-  }
-  
-  return { isValid: true, parsedUrl };
-}
-
-// -------------------
-
 
 // -------------------
 // CORS & Security Headers
@@ -476,38 +365,19 @@ app.get("/api/safe-file", (req, res) => {
 // -------------------
 // VULNERABLE: Server-Side Request Forgery (SSRF)
 // -------------------
-// NONCOMPLIANT CODE - FOR DEMONSTRATION PURPOSES ONLY
-app.get("/api/vulnerable-fetch", async (req, res) => {
-  const url = req.query.url; // No validation - vulnerable to SSRF
-  
-  if (!url) {
-    return res.status(400).json({ error: "URL parameter is required" });
-  }
-
-  try {
-    // VULNERABLE: Direct axios request without any validation
-    const response = await axios.get(url); // Attacker can access internal services
-    
-    // VULNERABLE: Exposing full response data without filtering
-    res.json({
-      success: true,
-      url: url,
-      data: response.data,
-      headers: response.headers, // Potentially sensitive information
-      status: response.status
-    });
-  } catch (err) {
-    // VULNERABLE: Information disclosure through error stack traces
-    res.status(500).json({ 
-      error: "Request failed", 
-      details: err.message,
-      stack: err.stack // Exposes internal system information
-    });
-  }
-});
+// // NONCOMPLIANT CODE - DO NOT USE IN PRODUCTION
+// app.get("/api/unsafe-fetch", async (req, res) => {
+//   const url = req.query.url; // No validation - vulnerable to SSRF
+//   try {
+//     const response = await axios.get(url); // Attacker can access internal services
+//     res.send(response.data);
+//   } catch (err) {
+//     res.status(500).send(err.stack); // Information disclosure
+//   }
+// });
 
 // -------------------
-// SECURE: Enhanced SSRF Prevention with Comprehensive Validation
+// SECURE: SSRF Prevention with URL Validation
 // -------------------
 app.get("/api/secure-fetch", async (req, res) => {
   const url = req.query.url;
@@ -518,108 +388,102 @@ app.get("/api/secure-fetch", async (req, res) => {
   }
   
   try {
-    // Use the SSRF validation utility
-    const validation = await validateUrlForSSRF(url);
+    // Parse and validate URL
+    const parsedUrl = new URL(url);
     
-    if (!validation.isValid) {
-      logEvent(`SSRF attempt blocked: ${url} - ${validation.error}`);
+    // Define allowed schemes and domains
+    const allowedSchemes = ["http:", "https:"];
+    const allowedDomains = [
+      "api.example.com",
+      "data.example.com", 
+      "secure-api.example.org",
+      "public-data.trusted.com"
+    ];
+    
+    // Validate scheme
+    if (!allowedSchemes.includes(parsedUrl.protocol)) {
+      logEvent(`SSRF attempt blocked - Invalid scheme: ${parsedUrl.protocol} for URL: ${url}`);
       return res.status(400).json({ 
-        error: validation.error,
-        allowedDomains: validation.allowedDomains 
+        error: "Invalid URL scheme. Only HTTP and HTTPS are allowed." 
       });
     }
     
-    const { parsedUrl } = validation;
+    // Validate domain
+    if (!allowedDomains.includes(parsedUrl.hostname)) {
+      logEvent(`SSRF attempt blocked - Untrusted domain: ${parsedUrl.hostname} for URL: ${url}`);
+      return res.status(400).json({ 
+        error: "Domain not in allowed list" 
+      });
+    }
     
-    // Configure axios with enhanced security settings
+    // Additional security checks
+    // Prevent access to private IP ranges
+    const privateIpRanges = [
+      /^127\./, // 127.0.0.0/8 (localhost)
+      /^10\./, // 10.0.0.0/8
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+      /^192\.168\./, // 192.168.0.0/16
+      /^169\.254\./, // 169.254.0.0/16 (link-local)
+      /^::1$/, // IPv6 localhost
+      /^fc00:/, // IPv6 private
+      /^fe80:/ // IPv6 link-local
+    ];
+    
+    const isPrivateIp = privateIpRanges.some(range => range.test(parsedUrl.hostname));
+    if (isPrivateIp) {
+      logEvent(`SSRF attempt blocked - Private IP access: ${parsedUrl.hostname}`);
+      return res.status(400).json({ 
+        error: "Access to private IP ranges is not allowed" 
+      });
+    }
+    
+    // Prevent access to common internal ports
+    const blockedPorts = [22, 23, 25, 53, 110, 143, 993, 995, 1433, 3306, 5432, 6379, 27017];
+    if (parsedUrl.port && blockedPorts.includes(parseInt(parsedUrl.port))) {
+      logEvent(`SSRF attempt blocked - Blocked port: ${parsedUrl.port}`);
+      return res.status(400).json({ 
+        error: "Access to this port is not allowed" 
+      });
+    }
+    
+    // Configure axios with security settings
     const axiosConfig = {
       timeout: 5000, // 5 second timeout
-      maxRedirects: 0, // No redirects to prevent redirect-based bypasses
-      validateStatus: (status) => status >= 200 && status < 400, // Only allow 2xx and 3xx responses
-      maxBodyLength: 1024 * 1024, // Limit response size to 1MB
+      maxRedirects: 3, // Limit redirects
+      validateStatus: (status) => status < 400, // Only allow 2xx and 3xx responses
       headers: {
-        'User-Agent': 'SecureApp-Fetcher/2.0',
-        'Accept': 'application/json, text/plain, */*',
-        'Cache-Control': 'no-cache'
+        'User-Agent': 'SecureApp-Fetcher/1.0'
       }
     };
     
     // Make the secure request
-    const response = await axios.get(parsedUrl.href, axiosConfig);
+    const response = await axios.get(url, axiosConfig);
     
-    logEvent(`Secure external fetch successful: ${parsedUrl.href}`);
+    logEvent(`Secure external fetch successful: ${url}`);
     
-    // Filter and sanitize response data
-    const sanitizedData = typeof response.data === 'string' && response.data.length > 10000 
-      ? response.data.substring(0, 10000) + '...[truncated]'
-      : response.data;
-    
-    // Return safe response with filtered headers
+    // Return safe response (consider filtering sensitive headers)
     res.status(200).json({
       success: true,
-      url: parsedUrl.href,
-      hostname: parsedUrl.hostname,
+      url: url,
       status: response.status,
-      data: sanitizedData,
-      contentType: response.headers['content-type'] || 'unknown',
-      contentLength: response.headers['content-length'] || 'unknown',
-      timestamp: new Date().toISOString()
+      data: response.data,
+      // Don't expose internal response headers
+      contentType: response.headers['content-type']
     });
     
   } catch (error) {
-    // Enhanced error handling with security considerations
-    const errorCode = error.code || 'UNKNOWN';
-    const errorMessage = error.message || 'Unknown error';
-    
-    // Log detailed error for security monitoring
-    logEvent(`SSRF fetch error: ${parsedUrl?.href || url} - Code: ${errorCode}, Message: ${errorMessage}`);
-    
-    // Provide generic error responses to prevent information disclosure
     if (error.code === 'ENOTFOUND') {
-      return res.status(400).json({ 
-        error: "Unable to resolve hostname",
-        code: "DNS_RESOLUTION_FAILED"
-      });
+      logEvent(`SSRF fetch failed - DNS resolution: ${url}`);
+      return res.status(400).json({ error: "Unable to resolve hostname" });
     } else if (error.code === 'ECONNREFUSED') {
-      return res.status(400).json({ 
-        error: "Connection refused by remote server",
-        code: "CONNECTION_REFUSED"
-      });
+      logEvent(`SSRF fetch failed - Connection refused: ${url}`);
+      return res.status(400).json({ error: "Connection refused" });
     } else if (error.code === 'ETIMEDOUT') {
-      return res.status(400).json({ 
-        error: "Request timeout exceeded",
-        code: "TIMEOUT"
-      });
-    } else if (error.code === 'ECONNRESET') {
-      return res.status(400).json({ 
-        error: "Connection reset by remote server",
-        code: "CONNECTION_RESET"
-      });
-    } else if (error.response?.status === 404) {
-      return res.status(404).json({ 
-        error: "Resource not found",
-        code: "NOT_FOUND"
-      });
-    } else if (error.response?.status === 403) {
-      return res.status(403).json({ 
-        error: "Access forbidden by remote server",
-        code: "FORBIDDEN"
-      });
-    } else if (error.response?.status >= 400 && error.response?.status < 500) {
-      return res.status(400).json({ 
-        error: "Client error from remote server",
-        code: "CLIENT_ERROR"
-      });
-    } else if (error.response?.status >= 500) {
-      return res.status(502).json({ 
-        error: "Remote server error",
-        code: "REMOTE_SERVER_ERROR"
-      });
+      logEvent(`SSRF fetch failed - Timeout: ${url}`);
+      return res.status(400).json({ error: "Request timeout" });
     } else {
-      return res.status(500).json({ 
-        error: "Request processing failed",
-        code: "PROCESSING_ERROR"
-      });
+      logEvent(`SSRF fetch error: ${url} - ${error.message}`);
+      return res.status(500).json({ error: "Request failed" });
     }
   }
 });
