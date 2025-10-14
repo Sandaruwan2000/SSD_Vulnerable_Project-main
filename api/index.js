@@ -120,21 +120,53 @@ app.get("/api/download", (req, res) => {
 // Safe External Fetch (SSRF prevention)
 // -------------------
 app.get("/api/fetch", async (req, res) => {
-  const allowedHosts = ["https://api.example.com", "https://data.example.org"];
-  const url = req.query.url;
-
+  const { endpoint } = req.query;
+  
+  // Input validation
+  if (!endpoint) {
+    return res.status(400).json({ error: "Endpoint parameter is required" });
+  }
+  
+  // Define predefined, safe endpoints instead of allowing arbitrary URLs
+  const allowedEndpoints = {
+    'weather': 'https://api.openweathermap.org/data/2.5/weather',
+    'news': 'https://newsapi.org/v2/top-headlines',
+    'quotes': 'https://api.quotable.io/random',
+    'time': 'https://worldtimeapi.org/api/timezone/UTC'
+  };
+  
+  // Only allow predefined endpoints
+  if (!allowedEndpoints[endpoint]) {
+    logEvent(`Blocked fetch to unauthorized endpoint: ${endpoint}`);
+    return res.status(400).json({ 
+      error: "Invalid endpoint",
+      allowedEndpoints: Object.keys(allowedEndpoints)
+    });
+  }
+  
+  const targetUrl = allowedEndpoints[endpoint];
+  
   try {
-    const parsedUrl = new URL(url);
-    if (!allowedHosts.includes(parsedUrl.origin)) {
-      logEvent(`Blocked fetch to untrusted URL: ${url}`);
-      return res.status(400).json({ error: "Invalid URL" });
-    }
-
-    const response = await axios.get(url);
-    logEvent(`External fetch successful: ${url}`);
-    res.send(response.data);
+    // Configure axios with security settings
+    const axiosConfig = {
+      timeout: 5000, // 5 second timeout
+      maxRedirects: 0, // No redirects allowed
+      validateStatus: (status) => status < 400,
+      headers: {
+        'User-Agent': 'SecureApp-Fetcher/1.0'
+      }
+    };
+    
+    const response = await axios.get(targetUrl, axiosConfig);
+    logEvent(`External fetch successful to endpoint: ${endpoint}`);
+    
+    res.status(200).json({
+      success: true,
+      endpoint: endpoint,
+      data: response.data
+    });
   } catch (err) {
-    logEvent(`External fetch error: ${err.message}`);
+    logEvent(`External fetch error for endpoint ${endpoint}: ${err.message}`);
     res.status(500).json({ error: "Request failed" });
   }
 });
