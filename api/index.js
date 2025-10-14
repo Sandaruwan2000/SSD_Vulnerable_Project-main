@@ -12,6 +12,16 @@ import fs from "fs";
 import path from "path";
 import axios from "axios";
 import dotenv from "dotenv";
+import { db } from "./connect.js";
+
+// Import Winston-based security logging system
+import { 
+  logEvent, 
+  logSecurityEvent, 
+  logUserDataAccess, 
+  trackFailedLogin, 
+  logSuccessfulLogin 
+} from "./logger.js";
 
 // Load environment variables
 dotenv.config();
@@ -21,9 +31,13 @@ app.use(express.json());
 app.use(cookieParser());
 
 // -------------------
-// Security Logging Utility
+// Security Logging & Monitoring Setup
 // -------------------
-
+logEvent('info', 'API server starting up', {
+  startup: true,
+  node_version: process.version,
+  environment: process.env.NODE_ENV || 'development'
+});
 
 // -------------------
 // CORS & Security Headers
@@ -38,44 +52,61 @@ app.use((req, res, next) => {
 });
 
 
+// Legacy login tracking - replaced by Winston logger
 const loginAttempts = [];
-
-function logEvent(event) {
-  const log = `[${new Date().toISOString()}] ${event}\n`;
-  fs.appendFileSync("security.log", log);
-}
 
 
 app.post("/api/log-login", (req, res) => {
   const { username, success, ip } = req.body;
+  const userAgent = req.headers['user-agent'] || 'unknown';
 
   const attempt = {
     username,
     success,
     ip,
     timestamp: new Date().toISOString(),
-    userAgent: req.headers['user-agent']
+    userAgent
   };
 
+  // Add to legacy array for backwards compatibility
   loginAttempts.push(attempt);
-  logEvent(`Login attempt: ${JSON.stringify(attempt)}`);
 
-  // Alert on repeated failed attempts
-  const failedAttempts = loginAttempts.filter(a => a.username === username && !a.success);
-  if (failedAttempts.length >= 5) {
-    logEvent(`ALERT: Multiple failed login attempts for ${username}`);
+  if (success) {
+    // Log successful login and reset failed attempts
+    logSuccessfulLogin(username, ip, userAgent);
+  } else {
+    // Track failed login and check for account lockout
+    const isLocked = trackFailedLogin(username, ip, userAgent);
+    
+    if (isLocked) {
+      return res.status(429).json({
+        error: "Account temporarily locked due to multiple failed login attempts",
+        message: "Please try again later"
+      });
+    }
   }
 
   res.json({
     message: "Login attempt logged",
-    recentAttempts: loginAttempts.slice(-5)
+    recentAttempts: loginAttempts.slice(-5).map(a => ({
+      username: a.username,
+      success: a.success,
+      timestamp: a.timestamp,
+      ip: a.ip // Only show to authorized users in production
+    }))
   });
 });
 
 // -------------------
-// Audit Logs (safe)
+// Audit Logs (safe) - Enhanced with Winston logging
 // -------------------
 app.get("/api/audit-logs", (req, res) => {
+  // Log audit access
+  logSecurityEvent('audit_access', 'Audit logs accessed', {
+    requester_ip: req.ip,
+    user_agent: req.headers['user-agent']
+  });
+
   res.json({
     loginAttempts: loginAttempts.map(a => ({
       username: a.username,
@@ -87,7 +118,8 @@ app.get("/api/audit-logs", (req, res) => {
       uptime: process.uptime(),
       environment: process.env.NODE_ENV,
       version: process.version,
-      platform: process.platform
+      platform: process.platform,
+      logging_status: "Winston-based security logging active"
     }
   });
 });
@@ -108,10 +140,19 @@ app.get("/api/download", (req, res) => {
 
   fs.readFile(safePath, (err, data) => {
     if (err) {
-      logEvent(`Failed file download: ${req.query.path}`);
+      logSecurityEvent('file_access_denied', 'Failed file download attempt', {
+        requested_path: req.query.path,
+        safe_path: safePath,
+        error: err.message,
+        requester_ip: req.ip
+      });
       return res.status(404).json({ error: "File not found" });
     }
-    logEvent(`File downloaded: ${safePath}`);
+    logEvent('info', 'File downloaded successfully', {
+      file_path: safePath,
+      requester_ip: req.ip,
+      user_agent: req.headers['user-agent']
+    });
     res.send(data);
   });
 });
@@ -137,7 +178,12 @@ app.get("/api/fetch", async (req, res) => {
   
   // Only allow predefined endpoints
   if (!allowedEndpoints[endpoint]) {
-    logEvent(`Blocked fetch to unauthorized endpoint: ${endpoint}`);
+    logSecurityEvent('unauthorized_endpoint_access', 'Blocked fetch to unauthorized endpoint', {
+      requested_endpoint: endpoint,
+      requester_ip: req.ip,
+      user_agent: req.headers['user-agent'],
+      allowed_endpoints: Object.keys(allowedEndpoints)
+    });
     return res.status(400).json({ 
       error: "Invalid endpoint",
       allowedEndpoints: Object.keys(allowedEndpoints)
@@ -158,7 +204,12 @@ app.get("/api/fetch", async (req, res) => {
     };
     
     const response = await axios.get(targetUrl, axiosConfig);
-    logEvent(`External fetch successful to endpoint: ${endpoint}`);
+    logEvent('info', 'External fetch successful', {
+      endpoint: endpoint,
+      target_url: targetUrl,
+      status_code: response.status,
+      requester_ip: req.ip
+    });
     
     res.status(200).json({
       success: true,
@@ -166,7 +217,12 @@ app.get("/api/fetch", async (req, res) => {
       data: response.data
     });
   } catch (err) {
-    logEvent(`External fetch error for endpoint ${endpoint}: ${err.message}`);
+    logEvent('error', 'External fetch failed', {
+      endpoint: endpoint,
+      target_url: targetUrl,
+      error: err.message,
+      requester_ip: req.ip
+    });
     res.status(500).json({ error: "Request failed" });
   }
 });
@@ -189,10 +245,21 @@ app.post("/api/admin/deleteUser", (req, res) => {
   // TODO: implement proper authentication & authorization
   db.query("DELETE FROM users WHERE id = ?", [userId], (err, data) => {
     if (err) {
-      logEvent(`Delete user error: ${err.message}`);
+      logEvent('error', 'User deletion failed', {
+        user_id: userId,
+        error: err.message,
+        admin_ip: req.ip,
+        user_agent: req.headers['user-agent']
+      });
       return res.status(500).json({ error: "Server error" });
     }
-    logEvent(`User deleted: ${userId}`);
+    
+    // Log critical user data modification
+    logUserDataAccess('delete', userId, 'admin', {
+      admin_ip: req.ip,
+      user_agent: req.headers['user-agent']
+    });
+    
     res.json({ message: "User deleted safely" });
   });
 });
@@ -215,7 +282,14 @@ const upload = multer({
 });
 
 app.post("/api/upload", upload.single("file"), (req, res) => {
-  logEvent(`File uploaded: ${req.file.filename}`);
+  logEvent('info', 'File uploaded successfully', {
+    filename: req.file.filename,
+    original_name: req.file.originalname,
+    size: req.file.size,
+    mimetype: req.file.mimetype,
+    uploader_ip: req.ip,
+    user_agent: req.headers['user-agent']
+  });
   res.status(200).json({ filename: req.file.filename });
 });
 
@@ -226,10 +300,20 @@ const allowedRedirects = ["/dashboard", "/profile"];
 app.get("/api/redirect", (req, res) => {
   const path = req.query.url;
   if (!allowedRedirects.includes(path)) {
-    logEvent(`Blocked unsafe redirect: ${path}`);
+    logSecurityEvent('unsafe_redirect_blocked', 'Blocked unsafe redirect attempt', {
+      requested_path: path,
+      requester_ip: req.ip,
+      user_agent: req.headers['user-agent'],
+      allowed_paths: allowedRedirects
+    });
     return res.status(400).json({ error: "Invalid redirect path" });
   }
-  logEvent(`Redirected safely to: ${path}`);
+  
+  logEvent('info', 'Safe redirect executed', {
+    redirect_path: path,
+    requester_ip: req.ip,
+    user_agent: req.headers['user-agent']
+  });
   res.redirect(path);
 });
 
@@ -247,7 +331,14 @@ app.use("/api/relationships", relationshipRoutes);
 // Error Handling Middleware
 // -------------------
 app.use((err, req, res, next) => {
-  logEvent(`Unhandled error: ${err.message}`);
+  logEvent('error', 'Unhandled server error', {
+    error: err.message,
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    user_agent: req.headers['user-agent'],
+    ip: req.ip
+  });
   res.status(500).json({ error: "Internal server error" });
 });
 
@@ -287,25 +378,46 @@ app.get("/api/safe-redirect", (req, res) => {
       // Ensure it's a valid internal path
       const allowedPaths = ['/dashboard', '/profile', '/home', '/settings'];
       if (allowedPaths.includes(url)) {
-        logEvent(`Safe internal redirect to: ${url}`);
+        logEvent('info', 'Safe internal redirect executed', {
+          redirect_url: url,
+          requester_ip: req.ip
+        });
         return res.redirect(url);
       } else {
-        logEvent(`Blocked internal redirect to: ${url}`);
+        logSecurityEvent('unsafe_internal_redirect_blocked', 'Blocked internal redirect attempt', {
+          requested_url: url,
+          requester_ip: req.ip,
+          allowed_paths: allowedPaths
+        });
         return res.status(400).json({ error: "Invalid internal redirect path" });
       }
     }
     
     // For external URLs, check against whitelist
     if (allowedDomains.includes(parsedUrl.hostname) && parsedUrl.protocol === 'https:') {
-      logEvent(`Safe external redirect to: ${url}`);
+      logEvent('info', 'Safe external redirect executed', {
+        redirect_url: url,
+        domain: parsedUrl.hostname,
+        requester_ip: req.ip
+      });
       res.redirect(url);
     } else {
-      logEvent(`Blocked unsafe redirect to: ${url}`);
+      logSecurityEvent('unsafe_external_redirect_blocked', 'Blocked unsafe external redirect', {
+        requested_url: url,
+        domain: parsedUrl.hostname,
+        protocol: parsedUrl.protocol,
+        requester_ip: req.ip,
+        allowed_domains: allowedDomains
+      });
       res.status(400).json({ error: "Redirect to external domain not allowed" });
     }
     
   } catch (error) {
-    logEvent(`Invalid URL format for redirect: ${url}`);
+    logSecurityEvent('invalid_redirect_url', 'Invalid URL format for redirect', {
+      requested_url: url,
+      error: error.message,
+      requester_ip: req.ip
+    });
     res.status(400).json({ error: "Invalid URL format" });
   }
 });
@@ -340,7 +452,13 @@ app.get("/api/safe-file", (req, res) => {
   const fileExtension = path.extname(safeFilename).toLowerCase();
   
   if (!allowedExtensions.includes(fileExtension)) {
-    logEvent(`Blocked file access with invalid extension: ${safeFilename}`);
+    logSecurityEvent('invalid_file_extension_blocked', 'Blocked file access with invalid extension', {
+      requested_filename: userFilename,
+      safe_filename: safeFilename,
+      extension: fileExtension,
+      allowed_extensions: allowedExtensions,
+      requester_ip: req.ip
+    });
     return res.status(400).json({ error: "File type not allowed" });
   }
   
@@ -350,14 +468,23 @@ app.get("/api/safe-file", (req, res) => {
     dotfiles: 'deny' // Prevent access to hidden files
   }, (err) => {
     if (err) {
-      logEvent(`File access error: ${safeFilename} - ${err.message}`);
+      logEvent('error', 'File access error', {
+        filename: safeFilename,
+        error: err.message,
+        status: err.status,
+        requester_ip: req.ip
+      });
       if (err.status === 404) {
         res.status(404).json({ error: "File not found" });
       } else {
         res.status(500).json({ error: "File access error" });
       }
     } else {
-      logEvent(`Safe file access: ${safeFilename}`);
+      logEvent('info', 'Safe file access successful', {
+        filename: safeFilename,
+        requester_ip: req.ip,
+        user_agent: req.headers['user-agent']
+      });
     }
   });
 });
@@ -402,7 +529,12 @@ app.get("/api/secure-fetch", async (req, res) => {
     
     // Validate scheme
     if (!allowedSchemes.includes(parsedUrl.protocol)) {
-      logEvent(`SSRF attempt blocked - Invalid scheme: ${parsedUrl.protocol} for URL: ${url}`);
+      logSecurityEvent('ssrf_invalid_scheme_blocked', 'SSRF attempt blocked - Invalid scheme', {
+        url: url,
+        scheme: parsedUrl.protocol,
+        allowed_schemes: allowedSchemes,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ 
         error: "Invalid URL scheme. Only HTTP and HTTPS are allowed." 
       });
@@ -410,7 +542,12 @@ app.get("/api/secure-fetch", async (req, res) => {
     
     // Validate domain
     if (!allowedDomains.includes(parsedUrl.hostname)) {
-      logEvent(`SSRF attempt blocked - Untrusted domain: ${parsedUrl.hostname} for URL: ${url}`);
+      logSecurityEvent('ssrf_untrusted_domain_blocked', 'SSRF attempt blocked - Untrusted domain', {
+        url: url,
+        domain: parsedUrl.hostname,
+        allowed_domains: allowedDomains,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ 
         error: "Domain not in allowed list" 
       });
@@ -421,7 +558,7 @@ app.get("/api/secure-fetch", async (req, res) => {
     const privateIpRanges = [
       /^127\./, // 127.0.0.0/8 (localhost)
       /^10\./, // 10.0.0.0/8
-      /^172\.(1[6-9]|2[0-9]|3[0-1])\./, // 172.16.0.0/12
+      /^172\.(1[6-9]|2\d|3[0-1])\./, // 172.16.0.0/12
       /^192\.168\./, // 192.168.0.0/16
       /^169\.254\./, // 169.254.0.0/16 (link-local)
       /^::1$/, // IPv6 localhost
@@ -431,7 +568,11 @@ app.get("/api/secure-fetch", async (req, res) => {
     
     const isPrivateIp = privateIpRanges.some(range => range.test(parsedUrl.hostname));
     if (isPrivateIp) {
-      logEvent(`SSRF attempt blocked - Private IP access: ${parsedUrl.hostname}`);
+      logSecurityEvent('ssrf_private_ip_blocked', 'SSRF attempt blocked - Private IP access', {
+        url: url,
+        hostname: parsedUrl.hostname,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ 
         error: "Access to private IP ranges is not allowed" 
       });
@@ -439,8 +580,13 @@ app.get("/api/secure-fetch", async (req, res) => {
     
     // Prevent access to common internal ports
     const blockedPorts = [22, 23, 25, 53, 110, 143, 993, 995, 1433, 3306, 5432, 6379, 27017];
-    if (parsedUrl.port && blockedPorts.includes(parseInt(parsedUrl.port))) {
-      logEvent(`SSRF attempt blocked - Blocked port: ${parsedUrl.port}`);
+    if (parsedUrl.port && blockedPorts.includes(Number.parseInt(parsedUrl.port, 10))) {
+      logSecurityEvent('ssrf_blocked_port', 'SSRF attempt blocked - Blocked port access', {
+        url: url,
+        port: parsedUrl.port,
+        blocked_ports: blockedPorts,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ 
         error: "Access to this port is not allowed" 
       });
@@ -459,7 +605,11 @@ app.get("/api/secure-fetch", async (req, res) => {
     // Make the secure request
     const response = await axios.get(url, axiosConfig);
     
-    logEvent(`Secure external fetch successful: ${url}`);
+    logEvent('info', 'Secure external fetch successful', {
+      url: url,
+      status: response.status,
+      requester_ip: req.ip
+    });
     
     // Return safe response (consider filtering sensitive headers)
     res.status(200).json({
@@ -473,16 +623,33 @@ app.get("/api/secure-fetch", async (req, res) => {
     
   } catch (error) {
     if (error.code === 'ENOTFOUND') {
-      logEvent(`SSRF fetch failed - DNS resolution: ${url}`);
+      logEvent('warn', 'SSRF fetch failed - DNS resolution', {
+        url: url,
+        error_code: error.code,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ error: "Unable to resolve hostname" });
     } else if (error.code === 'ECONNREFUSED') {
-      logEvent(`SSRF fetch failed - Connection refused: ${url}`);
+      logEvent('warn', 'SSRF fetch failed - Connection refused', {
+        url: url,
+        error_code: error.code,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ error: "Connection refused" });
     } else if (error.code === 'ETIMEDOUT') {
-      logEvent(`SSRF fetch failed - Timeout: ${url}`);
+      logEvent('warn', 'SSRF fetch failed - Timeout', {
+        url: url,
+        error_code: error.code,
+        requester_ip: req.ip
+      });
       return res.status(400).json({ error: "Request timeout" });
     } else {
-      logEvent(`SSRF fetch error: ${url} - ${error.message}`);
+      logEvent('error', 'SSRF fetch error', {
+        url: url,
+        error: error.message,
+        error_code: error.code,
+        requester_ip: req.ip
+      });
       return res.status(500).json({ error: "Request failed" });
     }
   }
@@ -493,5 +660,19 @@ app.get("/api/secure-fetch", async (req, res) => {
 // -------------------
 const PORT = process.env.PORT || 8800;
 app.listen(PORT, () => {
-  console.log(`API working securely on port ${PORT}!`);
+  const startupMessage = `API server started securely on port ${PORT}`;
+  console.log(startupMessage);
+  
+  logEvent('info', 'Server started successfully', {
+    port: PORT,
+    environment: process.env.NODE_ENV || 'development',
+    node_version: process.version,
+    security_features: [
+      'Winston logging enabled',
+      'Failed login tracking active',
+      'SSRF protection enabled',
+      'Path traversal protection enabled',
+      'Open redirect protection enabled'
+    ]
+  });
 });

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from '../../axios';
+import { makeRequest } from '../../axios';
 import './passwordReset.scss';
 
 const PasswordReset = () => {
@@ -34,7 +34,7 @@ const PasswordReset = () => {
   const handleDirectReset = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/reset-password-direct', {
+      const response = await makeRequest.post('/auth/reset-password-direct', {
         email: formData.email,
         newPassword: formData.newPassword
       });
@@ -48,7 +48,7 @@ const PasswordReset = () => {
   const handleAccountRecovery = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/account-recovery', {
+      const response = await makeRequest.post('/auth/account-recovery', {
         email: formData.email,
         username: formData.username
       });
@@ -62,7 +62,7 @@ const PasswordReset = () => {
   const handleBulkUpdate = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/bulk-password-update', {
+      const response = await makeRequest.post('/auth/bulk-password-update', {
         newPassword: formData.newPassword,
         userPattern: formData.userPattern
       });
@@ -76,7 +76,7 @@ const PasswordReset = () => {
   const handleAccountDeletion = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/delete-account', {
+      const response = await makeRequest.post('/auth/delete-account', {
         email: formData.email,
         reason: formData.reason
       });
@@ -99,7 +99,7 @@ const PasswordReset = () => {
         newData = { reason: formData.reason };
       }
 
-      const response = await axios.post('/api/auth/admin-override', {
+      const response = await makeRequest.post('/auth/admin-override', {
         action: formData.action,
         targetUser: formData.targetUser,
         newData: newData
@@ -113,7 +113,7 @@ const PasswordReset = () => {
   // A06:2021 - Component Inventory Check
   const handleComponentInventory = async () => {
     try {
-      const response = await axios.get('/api/auth/component-inventory');
+      const response = await makeRequest.get('/auth/component-inventory');
       setResults(JSON.stringify(response.data, null, 2));
     } catch (error) {
       setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
@@ -124,7 +124,7 @@ const PasswordReset = () => {
   const handleTemplateProcessing = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/process-template', {
+      const response = await makeRequest.post('/auth/process-template', {
         template: formData.template,
         data: formData.templateData ? JSON.parse(formData.templateData) : {}
       });
@@ -138,7 +138,7 @@ const PasswordReset = () => {
   const handleMarkdownRendering = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/render-markdown', {
+      const response = await makeRequest.post('/auth/render-markdown', {
         markdown: formData.markdown
       });
       setResults(JSON.stringify(response.data, null, 2));
@@ -151,7 +151,7 @@ const PasswordReset = () => {
   const handleDataSerialization = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/serialize-data', {
+      const response = await makeRequest.post('/auth/serialize-data', {
         userData: formData.userData ? JSON.parse(formData.userData) : {}
       });
       setResults(JSON.stringify(response.data, null, 2));
@@ -164,7 +164,7 @@ const PasswordReset = () => {
   const handleObjectProcessing = async (e) => {
     e.preventDefault();
     try {
-      const response = await axios.post('/api/auth/process-object', {
+      const response = await makeRequest.post('/auth/process-object', {
         userObject: formData.userObject ? JSON.parse(formData.userObject) : {},
         operations: formData.operations ? JSON.parse(formData.operations) : []
       });
@@ -177,7 +177,7 @@ const PasswordReset = () => {
   // A06:2021 - Security Scan
   const handleSecurityScan = async () => {
     try {
-      const response = await axios.get('/api/auth/security-scan');
+      const response = await makeRequest.get('/auth/security-scan');
       setResults(JSON.stringify(response.data, null, 2));
     } catch (error) {
       setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);

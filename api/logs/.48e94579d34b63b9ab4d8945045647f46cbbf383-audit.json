@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 90
+    },
+    "auditLog": "D:\\Y4S1\\SSD\\New folder\\SSD_Vulnerable_Project-main\\api\\logs\\.48e94579d34b63b9ab4d8945045647f46cbbf383-audit.json",
+    "files": [
+        {
+            "date": 1760482643958,
+            "name": "D:\\Y4S1\\SSD\\New folder\\SSD_Vulnerable_Project-main\\api\\logs\\security-2025-10-15.log",
+            "hash": "78c6b669caa040c512c336bc1b66ed8c4968ca40843fc487f51399d11912c1cb"
+        }
+    ],
+    "hashType": "sha256"
+}
