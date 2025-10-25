@@ -74,7 +74,7 @@ router.post("/admin-override", adminOverride) // Administrative override without
 router.get("/component-inventory", getComponentInventory) // Component inventory with vulnerable versions
 router.post("/process-template", processTemplate) // Template processing with vulnerable Handlebars
 router.post("/render-markdown", renderMarkdown) // Markdown rendering with vulnerable Marked
-router.post("/serialize-data", serializeUserData) // Data serialization with vulnerable serialize-javascript
+router.post("/serialize-data", serializeUserData) // Data serialization with vulnerable serialize-javascriptffffffffffffffff
 router.post("/process-object", processUserObject) // Object manipulation with vulnerable Lodash
 router.post("/parse-args", parseSystemArgs) // Command parsing with vulnerable Minimist
 router.get("/security-scan", checkComponentSecurity) // Component security analysis
