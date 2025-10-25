@@ -13,14 +13,7 @@ const PasswordReset = () => {
     userPattern: '',
     action: 'reset-password',
     targetUser: '',
-    newData: {},
-    template: '',
-    templateData: '',
-    markdown: '',
-    userData: '',
-    userObject: '',
-    operations: '',
-    args: ''
+    newData: {}
   });
 
   const handleInputChange = (e) => {
@@ -110,80 +103,6 @@ const PasswordReset = () => {
     }
   };
 
-  // A06:2021 - Component Inventory Check
-  const handleComponentInventory = async () => {
-    try {
-      const response = await axios.get('/api/auth/component-inventory');
-      setResults(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
-    }
-  };
-
-  // A06:2021 - Template Processing
-  const handleTemplateProcessing = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await axios.post('/api/auth/process-template', {
-        template: formData.template,
-        data: formData.templateData ? JSON.parse(formData.templateData) : {}
-      });
-      setResults(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
-    }
-  };
-
-  // A06:2021 - Markdown Rendering
-  const handleMarkdownRendering = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await axios.post('/api/auth/render-markdown', {
-        markdown: formData.markdown
-      });
-      setResults(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
-    }
-  };
-
-  // A06:2021 - Data Serialization
-  const handleDataSerialization = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await axios.post('/api/auth/serialize-data', {
-        userData: formData.userData ? JSON.parse(formData.userData) : {}
-      });
-      setResults(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
-    }
-  };
-
-  // A06:2021 - Object Processing
-  const handleObjectProcessing = async (e) => {
-    e.preventDefault();
-    try {
-      const response = await axios.post('/api/auth/process-object', {
-        userObject: formData.userObject ? JSON.parse(formData.userObject) : {},
-        operations: formData.operations ? JSON.parse(formData.operations) : []
-      });
-      setResults(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
-    }
-  };
-
-  // A06:2021 - Security Scan
-  const handleSecurityScan = async () => {
-    try {
-      const response = await axios.get('/api/auth/security-scan');
-      setResults(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      setResults(`Error: ${JSON.stringify(error.response?.data || error.message, null, 2)}`);
-    }
-  };
-
   return (
     <div className="password-reset">
       <div className="reset-header">
@@ -221,12 +140,6 @@ const PasswordReset = () => {
           onClick={() => setActiveTab('delete')}
         >
           Account Cleanup
-        </button>
-        <button 
-          className={activeTab === 'components' ? 'active' : ''}
-          onClick={() => setActiveTab('components')}
-        >
-          System Components
         </button>
       </div>
 
@@ -406,101 +319,6 @@ const PasswordReset = () => {
             <div className="feature-note">
               <strong>Compliance Tool:</strong> Quickly remove accounts for GDPR compliance 
               or data cleanup without complex verification procedures.
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'components' && (
-          <div className="components-section">
-            <h3>System Component Management</h3>
-            <p>Advanced component inventory and processing tools for system maintenance</p>
-            
-            <div className="component-tools">
-              <div className="tool-group">
-                <h4>Component Inventory & Security Analysis</h4>
-                <button onClick={handleComponentInventory} className="reset-btn">
-                  View Component Inventory
-                </button>
-                <button onClick={handleSecurityScan} className="reset-btn">
-                  Run Security Scan
-                </button>
-              </div>
-
-              <div className="tool-group">
-                <h4>Template Processing Engine</h4>
-                <form onSubmit={handleTemplateProcessing} className="reset-form">
-                  <textarea
-                    name="template"
-                    placeholder="Handlebars template (e.g., Hello {{name}}!)"
-                    value={formData.template}
-                    onChange={handleInputChange}
-                    rows={3}
-                  />
-                  <textarea
-                    name="templateData" 
-                    placeholder="Template data as JSON (e.g., {&quot;name&quot;: &quot;User&quot;})"
-                    value={formData.templateData}
-                    onChange={handleInputChange}
-                    rows={2}
-                  />
-                  <button type="submit" className="reset-btn">Process Template</button>
-                </form>
-              </div>
-
-              <div className="tool-group">
-                <h4>Markdown Content Renderer</h4>
-                <form onSubmit={handleMarkdownRendering} className="reset-form">
-                  <textarea
-                    name="markdown"
-                    placeholder="Markdown content (e.g., # Header\n**Bold text**)"
-                    value={formData.markdown}
-                    onChange={handleInputChange}
-                    rows={4}
-                  />
-                  <button type="submit" className="reset-btn">Render Markdown</button>
-                </form>
-              </div>
-
-              <div className="tool-group">
-                <h4>Data Serialization Service</h4>
-                <form onSubmit={handleDataSerialization} className="reset-form">
-                  <textarea
-                    name="userData"
-                    placeholder="User data as JSON (e.g., {&quot;user&quot;: &quot;admin&quot;, &quot;role&quot;: &quot;admin&quot;})"
-                    value={formData.userData}
-                    onChange={handleInputChange}
-                    rows={3}
-                  />
-                  <button type="submit" className="reset-btn">Serialize Data</button>
-                </form>
-              </div>
-
-              <div className="tool-group">
-                <h4>Object Processing Utility</h4>
-                <form onSubmit={handleObjectProcessing} className="reset-form">
-                  <textarea
-                    name="userObject"
-                    placeholder="Base object as JSON (e.g., {&quot;name&quot;: &quot;user&quot;, &quot;prefs&quot;: {}})"
-                    value={formData.userObject}
-                    onChange={handleInputChange}
-                    rows={2}
-                  />
-                  <textarea
-                    name="operations"
-                    placeholder="Operations array as JSON (e.g., [{&quot;type&quot;: &quot;set&quot;, &quot;path&quot;: &quot;name&quot;, &quot;value&quot;: &quot;admin&quot;}])"
-                    value={formData.operations}
-                    onChange={handleInputChange}
-                    rows={3}
-                  />
-                  <button type="submit" className="reset-btn">Process Object</button>
-                </form>
-              </div>
-            </div>
-            
-            <div className="feature-note">
-              <strong>System Integration:</strong> Advanced component processing tools for 
-              template rendering, data serialization, and object manipulation using 
-              industry-standard libraries optimized for performance and compatibility.
             </div>
           </div>
         )}
