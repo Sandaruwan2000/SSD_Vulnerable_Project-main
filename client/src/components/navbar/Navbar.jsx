@@ -8,14 +8,30 @@ import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import SearchOutlinedIcon from "@mui/icons-material/SearchOutlined";
 import AdminPanelSettingsOutlinedIcon from "@mui/icons-material/AdminPanelSettingsOutlined";
-import { Link } from "react-router-dom";
+import LogoutOutlinedIcon from "@mui/icons-material/LogoutOutlined"; // 1. Import logout icon
+import { Link, useNavigate } from "react-router-dom"; // 2. Import useNavigate
 import { useContext } from "react";
 import { DarkModeContext } from "../../context/darkModeContext";
 import { AuthContext } from "../../context/authContext";
 
 const Navbar = () => {
   const { toggle, darkMode } = useContext(DarkModeContext);
-  const { currentUser } = useContext(AuthContext);
+  // 3. Get the logout function from the context
+  const { currentUser, logout } = useContext(AuthContext); 
+  
+  // 4. Initialize navigate
+  const navigate = useNavigate();
+
+  // 5. Create a logout handler
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate("/login"); // Redirect to login page on success
+    } catch (err) {
+      console.error("Logout failed:", err);
+      // You could add an error toast here
+    }
+  };
 
   return (
     <div className="navbar">
@@ -25,9 +41,9 @@ const Navbar = () => {
         </Link>
         <HomeOutlinedIcon />
         {darkMode ? (
-          <WbSunnyOutlinedIcon onClick={toggle} />
+          <WbSunnyOutlinedIcon onClick={toggle} style={{ cursor: "pointer" }}/>
         ) : (
-          <DarkModeOutlinedIcon onClick={toggle} />
+          <DarkModeOutlinedIcon onClick={toggle} style={{ cursor: "pointer" }}/>
         )}
         <GridViewOutlinedIcon />
         <Link to="/admin" style={{ color: 'inherit' }}>
@@ -42,6 +58,10 @@ const Navbar = () => {
         <PersonOutlinedIcon />
         <EmailOutlinedIcon />
         <NotificationsOutlinedIcon />
+
+        {/* 6. Add the logout icon with the click handler */}
+        <LogoutOutlinedIcon onClick={handleLogout} style={{ cursor: "pointer" }} />
+
         <div className="user">
           <img
             src={"/upload/" + currentUser.profilePic}

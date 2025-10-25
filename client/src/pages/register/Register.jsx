@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "./register.scss";
-import axios from "axios";
+import { makeRequest } from "../../axios.js"; 
+
+import { toast, ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 const Register = () => {
   const [inputs, setInputs] = useState({
@@ -10,7 +13,8 @@ const Register = () => {
     password: "",
     name: "",
   });
-  const [err, setErr] = useState(null);
+
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setInputs((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -20,16 +24,43 @@ const Register = () => {
     e.preventDefault();
 
     try {
-      await axios.post("http://localhost:8800/api/auth/register", inputs);
+      // 3. Use 'makeRequest' and the relative URL
+      // The baseURL "http://localhost:8800/api/" is already in makeRequest
+      await makeRequest.post("auth/register", inputs);
+
+      toast.success("Registration successful! Redirecting to login...");
+
+      setInputs({
+        username: "",
+        email: "",
+        password: "",
+        name: "",
+      });
+
+      setTimeout(() => {
+        navigate("/login");
+      }, 2000);
+
     } catch (err) {
-      setErr(err.response.data);
+      const errorMessage = err.response.data?.error || err.response.data || "Registration failed";
+      toast.error(errorMessage);
     }
   };
 
-  console.log(err)
-
   return (
     <div className="register">
+      <ToastContainer
+        position="top-right"
+        autoClose={2000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
       <div className="card">
         <div className="left">
           <h1>Lama Social.</h1>
@@ -51,26 +82,30 @@ const Register = () => {
               placeholder="Username"
               name="username"
               onChange={handleChange}
+              value={inputs.username}
             />
             <input
               type="email"
               placeholder="Email"
               name="email"
               onChange={handleChange}
+              value={inputs.email}
             />
             <input
               type="password"
               placeholder="Password"
               name="password"
               onChange={handleChange}
+              value={inputs.password}
             />
             <input
               type="text"
               placeholder="Name"
               name="name"
               onChange={handleChange}
+              value={inputs.name}
             />
-            {err && (typeof err === "string" ? err : err?.message || JSON.stringify(err, null, 2))}
+
             <button onClick={handleClick}>Register</button>
           </form>
         </div>
