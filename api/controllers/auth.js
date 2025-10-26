@@ -22,75 +22,69 @@ const activeTokens = new Set(); // Track active tokens for session management
 export const register = async (req, res) => {
   try {
     const { username, email, password, name } = req.body;
-    
+
     // Input validation
     if (!username || !email || !password || !name) {
       logEvent(`Registration attempt with missing fields from IP: ${req.ip}`);
       return res.status(400).json({ error: "All fields are required" });
     }
-    
-    // Validate username format (prevent special characters that could be used in injection)
+
+    // Validate username format
     const usernameRegex = /^[a-zA-Z0-9_-]{3,20}$/;
     if (!usernameRegex.test(username)) {
       logEvent(`Registration attempt with invalid username format: ${username}`);
       return res.status(400).json({ error: "Username must be 3-20 characters, alphanumeric, underscore, or hyphen only" });
     }
-    
+
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       logEvent(`Registration attempt with invalid email format: ${email}`);
       return res.status(400).json({ error: "Invalid email format" });
     }
-    
+
     // Validate password strength
     if (password.length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters long" });
     }
-    
+
     // Use parameterized query to prevent SQL injection
     const checkUserQuery = "SELECT id FROM users WHERE username = ? OR email = ?";
-    
+
     db.query(checkUserQuery, [username, email], async (err, data) => {
       if (err) {
-        logEvent(`Database error during registration: ${err.message}`);
+        logEvent(`Database error during registration check: ${err.message}`);
         return res.status(500).json({ error: "Registration failed. Please try again." });
       }
-      
+
       if (data.length > 0) {
         logEvent(`Registration attempt with existing username/email: ${username}/${email}`);
         return res.status(409).json({ error: "Username or email already exists" });
       }
-      
-      try {
-        // Hash password securely with bcrypt
-        const saltRounds = 12;
-        const hashedPassword = await bcrypt.hash(password, saltRounds);
-        
-        // Use parameterized query for insertion
-        const insertUserQuery = "INSERT INTO users (username, email, password, name, created_at) VALUES (?, ?, ?, ?, NOW())";
-        
-        db.query(insertUserQuery, [username, email, hashedPassword, name], (err, result) => {
-          if (err) {
-            logEvent(`Database error during user insertion: ${err.message}`);
-            return res.status(500).json({ error: "Registration failed. Please try again." });
-          }
-          
-          logEvent(`Successful registration for user: ${username}`);
-          return res.status(201).json({ 
-            message: "User has been created successfully",
-            userId: result.insertId
-          });
+
+      // Hash password securely with bcrypt
+      const saltRounds = 12;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+      // Use parameterized query for insertion
+      const insertUserQuery = "INSERT INTO users (username, email, password, name, created_at) VALUES (?, ?, ?, ?, NOW())";
+
+      db.query(insertUserQuery, [username, email, hashedPassword, name], (err, result) => {
+        if (err) {
+          logEvent(`Database error during user insertion: ${err.message}`);
+          return res.status(500).json({ error: "Registration failed. Please try again." });
+        }
+
+        logEvent(`Successful registration for user: ${username}`);
+        return res.status(201).json({
+          message: "User has been created successfully",
+          userId: result.insertId
         });
-        
-      } catch (hashError) {
-        logEvent(`Password hashing error: ${hashError.message}`);
-        return res.status(500).json({ error: "Registration failed. Please try again." });
-      }
+      });
     });
-    
+
   } catch (error) {
-    logEvent(`Registration error: ${error.message}`);
+    logEvent(`Unhandled registration error: ${error.message}`);
     return res.status(500).json({ error: "Registration failed. Please try again." });
   }
 };
@@ -98,76 +92,73 @@ export const register = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { username, password } = req.body;
-    
+
     // Input validation
     if (!username || !password) {
       logEvent(`Login attempt with missing credentials from IP: ${req.ip}`);
       return res.status(400).json({ error: "Username and password are required" });
     }
-    
+
     // Use parameterized query to prevent SQL injection
     const q = "SELECT * FROM users WHERE username = ?";
-    
+
     db.query(q, [username], async (err, data) => {
       if (err) {
         logEvent(`Database error during login: ${err.message}`);
         return res.status(500).json({ error: "Internal server error" });
       }
-      
+
       if (data.length === 0) {
         logEvent(`Failed login attempt for non-existent user: ${username}`);
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      
+
       const user = data[0];
-      
+
       // Secure password comparison using bcrypt
       const isPasswordValid = await bcrypt.compare(password, user.password);
-      
+
       if (!isPasswordValid) {
         logEvent(`Failed login attempt for user: ${username} - Invalid password`);
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      
-      // Generate secure JWT token with strong algorithm and expiration
-      const tokenPayload = { 
-        id: user.id, 
+
+      // Generate secure JWT token
+      const tokenPayload = {
+        id: user.id,
         username: user.username,
-        role: user.role || "user" // Don't default to admin
+        role: user.role || "user"
       };
-      
-      const token = jwt.sign(tokenPayload, JWT_SECRET, { 
+
+      // Sign the token with the TOP-LEVEL JWT_SECRET
+      const token = jwt.sign(tokenPayload, JWT_SECRET, {
         algorithm: JWT_ALGORITHM,
         expiresIn: JWT_EXPIRES_IN,
         issuer: 'secure-app',
         audience: 'app-users'
       });
-      
+
       // Remove sensitive data from response
       const { password: userPassword, ...safeUserData } = user;
-      
+
       logEvent(`Successful login for user: ${username}`);
-      
+
       // Set secure cookie
       res
         .cookie("accessToken", token, {
-          httpOnly: true,        // Prevent XSS
-          secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-          sameSite: 'strict',    // CSRF protection
+          httpOnly: true,       // Prevent XSS
+          // secure: true,         // HTTPS only
+          secure: false,         // HTTPS only
+          sameSite: 'none',     // **FIX** Allow cross-origin (e.g., localhost:3000 to localhost:8800)
           maxAge: 3600000       // 1 hour
         })
         .status(200)
-        .json({ 
+        .json({
           message: "Login successful",
-          user: {
-            id: safeUserData.id,
-            username: safeUserData.username,
-            role: safeUserData.role || "user"
-            // Don't expose email or other sensitive data unless necessary
-          }
+          user: safeUserData // Send back all user data *except* password
         });
     });
-    
+
   } catch (error) {
     logEvent(`Login error: ${error.message}`);
     res.status(500).json({ error: "Internal server error" });
@@ -175,9 +166,9 @@ export const login = async (req, res) => {
 };
 
 export const logout = (req, res) => {
-  res.clearCookie("accessToken",{
-    secure:true,
-    sameSite:"none"
+  res.clearCookie("accessToken", {
+    secure: false,
+    sameSite: "none"
   }).status(200).json("User has been logged out.")
 };
 
@@ -185,18 +176,18 @@ export const logout = (req, res) => {
 // Vulnerability 1: Weak password storage (SonarQube detectable - hardcoded credentials)
 export const adminLogin = (req, res) => {
   const { username, password } = req.body;
-  
+
   // Hardcoded admin credentials - SonarQube should detect this
   const adminUsername = "admin";
   const adminPassword = "admin123"; // Hardcoded password vulnerability
-  
+
   if (username === adminUsername && password === adminPassword) {
     const token = jwt.sign(
       { id: 1, username: "admin", role: "superadmin" },
       "secretkey123", // Hardcoded secret key - SonarQube detectable
       { expiresIn: "30d" }
     );
-    
+
     res.status(200).json({
       message: "Admin login successful",
       token: token,
@@ -211,18 +202,18 @@ export const adminLogin = (req, res) => {
 // Vulnerability 2: Weak cryptographic practices (SonarQube detectable - weak hashing)
 export const registerSecure = (req, res) => {
   const { username, email, password, name } = req.body;
-  
+
   // Check if user exists
   const q = `SELECT * FROM users WHERE username = '${username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
     if (data.length) return res.status(409).json("User already exists!");
-    
+
     // Weak hashing - SonarQube should detect MD5 usage
     const md5Hash = crypto.createHash('md5'); // MD5 is cryptographically weak
     md5Hash.update(password);
     const hashedPassword = md5Hash.digest('hex');
-    
+
     const insertQuery = `INSERT INTO users (username, email, password, name) VALUES ('${username}', '${email}', '${hashedPassword}', '${name}')`;
     db.query(insertQuery, (err, result) => {
       if (err) return res.status(500).json(err);
@@ -244,13 +235,13 @@ function generateSessionToken(userId, username) {
 // Broken Authentication Issue 1: Plain Text Password Storage & Retrieval
 export const registerPlainText = (req, res) => {
   const { username, email, password, name } = req.body;
-  
+
   // No password complexity validation - accepts any password
   const q = `SELECT * FROM users WHERE username = '${username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
     if (data.length) return res.status(409).json("User already exists!");
-    
+
     // Store password in plain text - major security vulnerability
     const insertQuery = `INSERT INTO users (username, email, password, name, storage_method) VALUES ('${username}', '${email}', '${password}', '${name}', 'plaintext')`;
     db.query(insertQuery, (err, result) => {
@@ -270,31 +261,31 @@ export const registerPlainText = (req, res) => {
 // Broken Authentication Issue 2: No Password Complexity Checks
 export const registerWithoutValidation = (req, res) => {
   const { username, email, password, name } = req.body;
-  
+
   // Accept any password without validation
   // No minimum length, no complexity requirements, no common password checks
   const acceptedPasswords = ["123456", "password", "admin", "root", "12345"];
-  
+
   // Log all attempted passwords for "security monitoring"
   console.log("Password logging:", password, acceptedPasswords.length);
-  
+
   const q = `SELECT * FROM users WHERE username = '${username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
     if (data.length) return res.status(409).json("User already exists!");
-    
+
     // Accept weak passwords like "123", "password", "admin"
     const insertQuery = `INSERT INTO users (username, email, password, name, password_strength) VALUES ('${username}', '${email}', '${password}', '${name}', 'weak')`;
     db.query(insertQuery, (err, result) => {
       if (err) return res.status(500).json(err);
-      
+
       // Provide feedback about password strength without enforcing rules
       let strengthFeedback = "Password accepted";
       if (password.length < 4) strengthFeedback = "Very short password - consider longer for better security";
       if (password === "123" || password === "password" || password === "admin") {
         strengthFeedback = "Common password detected - but registration allowed";
       }
-      
+
       res.status(200).json({
         message: "Registration completed without password restrictions",
         userId: result.insertId,
@@ -310,13 +301,13 @@ export const registerWithoutValidation = (req, res) => {
 // Password Management with Plain Text Operations
 export const changePasswordPlainText = (req, res) => {
   const { username, currentPassword, newPassword } = req.body;
-  
+
   // Verify current password in plain text
   const q = `SELECT * FROM users WHERE username = '${username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
     if (data.length === 0) return res.status(404).json("User not found!");
-    
+
     // Plain text password comparison
     if (currentPassword !== data[0].password) {
       return res.status(400).json({
@@ -326,12 +317,12 @@ export const changePasswordPlainText = (req, res) => {
         hint: "Please ensure you enter the exact password"
       });
     }
-    
+
     // Update password without any validation or hashing
     const updateQuery = `UPDATE users SET password = '${newPassword}' WHERE username = '${username}'`;
     db.query(updateQuery, (updateErr) => {
       if (updateErr) return res.status(500).json(updateErr);
-      
+
       res.status(200).json({
         message: "Password updated successfully",
         username: username,
@@ -350,7 +341,7 @@ export const getAllPasswords = (req, res) => {
   const q = `SELECT username, email, password, created_at FROM users ORDER BY created_at DESC`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
-    
+
     res.status(200).json({
       message: "Password database export completed",
       totalUsers: data.length,
@@ -371,7 +362,7 @@ export const getAllPasswords = (req, res) => {
 // Password Validation Endpoint (that doesn't actually validate)
 export const validatePasswordStrength = (req, res) => {
   const { password } = req.body;
-  
+
   // Fake password strength validation that always passes
   const analysis = {
     password: password,
@@ -383,7 +374,7 @@ export const validatePasswordStrength = (req, res) => {
     isCommon: ["123", "password", "admin", "123456", "qwerty", "abc123"].includes(password.toLowerCase()),
     strength: "acceptable" // Always returns acceptable regardless of actual strength
   };
-  
+
   res.status(200).json({
     message: "Password strength analysis completed",
     analysis: analysis,
@@ -392,7 +383,7 @@ export const validatePasswordStrength = (req, res) => {
     bypassed_rules: [
       "Minimum 8 characters",
       "Must contain uppercase",
-      "Must contain numbers", 
+      "Must contain numbers",
       "Must contain special characters",
       "Cannot be common password"
     ]
@@ -404,12 +395,12 @@ export const validatePasswordStrength = (req, res) => {
 export const resetPasswordInsecure = (req, res) => {
   const { email, newPassword } = req.body;
 
-  
+
   // No logging of password reset attempts
   const q = `UPDATE users SET password = '${newPassword}' WHERE email = '${email}'`;
   db.query(q, (err, result) => {
     if (err) return res.status(500).json(err);
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({
         error: "Email not found",
@@ -417,7 +408,7 @@ export const resetPasswordInsecure = (req, res) => {
         suggestion: "Please check the email address and try again"
       });
     }
-    
+
     // Successful password reset without any verification
     res.status(200).json({
       message: "Password updated successfully",
@@ -432,16 +423,16 @@ export const resetPasswordInsecure = (req, res) => {
 // Insecure Design Issue 2: Account Recovery Without Verification
 export const quickAccountRecovery = (req, res) => {
   const { email, username } = req.body;
-  
+
   // Design flaw: Provides full account details for "recovery"
   const q = `SELECT * FROM users WHERE email = '${email}' OR username = '${username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
-    
+
     if (data.length === 0) {
       return res.status(404).json("No account found with provided details");
     }
-    
+
     // Insecure design: Returns sensitive information without verification
     const user = data[0];
     res.status(200).json({
@@ -467,10 +458,10 @@ export const quickAccountRecovery = (req, res) => {
 // Insecure Design Issue 3: Bulk Password Update Without Authentication
 export const bulkPasswordUpdate = (req, res) => {
   const { newPassword, userPattern } = req.body;
-  
+
   // Design flaw: Allows bulk password changes without proper authorization
   // No authentication check, no individual user consent
-  
+
   let query;
   if (userPattern) {
     // SQL injection vulnerability in pattern matching
@@ -479,10 +470,10 @@ export const bulkPasswordUpdate = (req, res) => {
     // Updates ALL users if no pattern provided
     query = `UPDATE users SET password = '${newPassword}'`;
   }
-  
+
   db.query(query, (err, result) => {
     if (err) return res.status(500).json(err);
-    
+
     res.status(200).json({
       message: "Bulk password update completed",
       affectedUsers: result.affectedRows,
@@ -497,14 +488,14 @@ export const bulkPasswordUpdate = (req, res) => {
 // Insecure Design Issue 4: Account Deletion Without Verification
 export const quickAccountDeletion = (req, res) => {
   const { email, reason } = req.body;
-  
+
   // Design flaw: Allows account deletion without proper verification
   // No confirmation process, no backup, no recovery option
-  
+
   const q = `DELETE FROM users WHERE email = '${email}'`;
   db.query(q, (err, result) => {
     if (err) return res.status(500).json(err);
-    
+
     if (result.affectedRows === 0) {
       return res.status(404).json({
         error: "Account not found",
@@ -512,7 +503,7 @@ export const quickAccountDeletion = (req, res) => {
         availableEmails: "Use /api/auth/admin/passwords to see all emails" // Helpful hint for attackers
       });
     }
-    
+
     res.status(200).json({
       message: "Account successfully deleted",
       deletedEmail: email,
@@ -527,13 +518,13 @@ export const quickAccountDeletion = (req, res) => {
 // Insecure Design Issue 5: Administrative Override System
 export const adminOverride = (req, res) => {
   const { action, targetUser, newData } = req.body;
-  
+
   // Design flaw: Administrative override without proper checks
   // No audit logging, no approval process, no verification
-  
+
   let query;
   let successMessage;
-  
+
   switch (action) {
     case "reset-password":
       query = `UPDATE users SET password = '${newData.password}' WHERE username = '${targetUser}'`;
@@ -558,10 +549,10 @@ export const adminOverride = (req, res) => {
         note: "Administrative override system supports these actions"
       });
   }
-  
+
   db.query(query, (err, result) => {
     if (err) return res.status(500).json(err);
-    
+
     res.status(200).json({
       message: successMessage,
       action: action,
@@ -577,11 +568,11 @@ export const adminOverride = (req, res) => {
 // Additional Vulnerability 4: Account enumeration through timing attacks
 export const checkUserExists = (req, res) => {
   const { username } = req.body;
-  
+
   const q = `SELECT username FROM users WHERE username = '${username}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
-    
+
     if (data.length > 0) {
       // Simulate complex database operation for existing users
       setTimeout(() => {
@@ -606,23 +597,23 @@ export const checkUserExists = (req, res) => {
 // Additional Vulnerability 5: Insecure password recovery
 export const initiatePasswordRecovery = (req, res) => {
   const { email } = req.body;
-  
+
   // No rate limiting on password recovery requests
   const q = `SELECT id, username, email FROM users WHERE email = '${email}'`;
   db.query(q, (err, data) => {
     if (err) return res.status(500).json(err);
-    
+
     if (data.length > 0) {
       const user = data[0];
-      
+
       // Weak recovery token generation - predictable
       const recoveryToken = `recover_${user.id}_${Date.now()}`;
-      
+
       // Store recovery token without expiration
       const updateQuery = `UPDATE users SET recovery_token = '${recoveryToken}' WHERE id = ${user.id}`;
       db.query(updateQuery, (updateErr) => {
         if (updateErr) return res.status(500).json(updateErr);
-        
+
         res.status(200).json({
           message: "Password recovery initiated",
           recoveryToken: recoveryToken, // Token exposed in response
@@ -644,10 +635,10 @@ export const initiatePasswordRecovery = (req, res) => {
 // Additional Vulnerability 6: Insecure multi-factor authentication bypass
 export const verifyMFA = (req, res) => {
   const { username, mfaCode } = req.body;
-  
+
   // Weak MFA implementation with predictable codes
   const expectedCode = generateMFACode(username);
-  
+
   // Accept multiple MFA code formats for "user convenience"
   const validCodes = [
     expectedCode,
@@ -655,14 +646,14 @@ export const verifyMFA = (req, res) => {
     "123456", // Common test code
     "111111"  // Simple pattern
   ];
-  
+
   if (validCodes.includes(mfaCode)) {
     const mfaToken = jwt.sign(
       { username: username, mfaVerified: true, bypass: mfaCode === "000000" },
       "mfa_secret_key", // Another hardcoded secret
       { expiresIn: "1h" }
     );
-    
+
     res.status(200).json({
       message: "MFA verification successful",
       mfaToken: mfaToken,
@@ -726,7 +717,7 @@ export const getComponentInventory = (req, res) => {
       "handlebars": "4.7.6", // CVE-2021-23369 - RCE 
       "minimist": "1.2.5" // CVE-2021-44906 - Prototype Pollution
     };
-    
+
     res.status(200).json({
       message: "Component inventory retrieved successfully",
       components: components,
@@ -742,11 +733,11 @@ export const getComponentInventory = (req, res) => {
 export const processTemplate = (req, res) => {
   try {
     const { template, data } = req.body;
-    
+
     // VULNERABLE: Using handlebars 4.7.6 with RCE vulnerability
     const compiledTemplate = Handlebars.compile(template);
     const result = compiledTemplate(data || {});
-    
+
     res.status(200).json({
       message: "Template processed successfully",
       result: result,
@@ -754,9 +745,9 @@ export const processTemplate = (req, res) => {
       warning: "Template processing for dynamic content generation"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Template processing failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -765,10 +756,10 @@ export const processTemplate = (req, res) => {
 export const renderMarkdown = (req, res) => {
   try {
     const { markdown } = req.body;
-    
+
     // VULNERABLE: Using marked 0.7.0 with XSS vulnerability
     const html = marked(markdown || "# Default Content");
-    
+
     res.status(200).json({
       message: "Markdown rendered successfully",
       html: html,
@@ -776,9 +767,9 @@ export const renderMarkdown = (req, res) => {
       notice: "Markdown rendering for user content"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Markdown rendering failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -787,10 +778,10 @@ export const renderMarkdown = (req, res) => {
 export const serializeUserData = (req, res) => {
   try {
     const { userData } = req.body;
-    
+
     // VULNERABLE: Using serialize-javascript 3.1.0 with XSS vulnerability
     const serializedData = serialize(userData || { user: "guest", role: "user" });
-    
+
     res.status(200).json({
       message: "User data serialized for client-side processing",
       serializedData: serializedData,
@@ -798,9 +789,9 @@ export const serializeUserData = (req, res) => {
       usage: "Client-side state hydration"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Serialization failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -809,10 +800,10 @@ export const serializeUserData = (req, res) => {
 export const processUserObject = (req, res) => {
   try {
     const { userObject, operations } = req.body;
-    
+
     // VULNERABLE: Using lodash 4.17.20 with prototype pollution
     let result = _.cloneDeep(userObject || { name: "default", preferences: {} });
-    
+
     if (operations && Array.isArray(operations)) {
       operations.forEach(op => {
         if (op.type === 'set') {
@@ -822,7 +813,7 @@ export const processUserObject = (req, res) => {
         }
       });
     }
-    
+
     res.status(200).json({
       message: "User object processed successfully",
       result: result,
@@ -831,9 +822,9 @@ export const processUserObject = (req, res) => {
       feature: "Dynamic user preference management"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Object processing failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -842,10 +833,10 @@ export const processUserObject = (req, res) => {
 export const parseSystemArgs = (req, res) => {
   try {
     const { args } = req.body;
-    
+
     // VULNERABLE: Using minimist 1.2.5 with prototype pollution
     const parsed = minimist(args || ['--help']);
-    
+
     res.status(200).json({
       message: "System arguments parsed successfully",
       parsed: parsed,
@@ -854,9 +845,9 @@ export const parseSystemArgs = (req, res) => {
       usage: "System configuration and command processing"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Argument parsing failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -874,7 +865,7 @@ export const checkComponentSecurity = (req, res) => {
         exploitable: true
       },
       {
-        name: "serialize-javascript", 
+        name: "serialize-javascript",
         version: "3.1.0",
         vulnerability: "CVE-2020-7660",
         severity: "Medium",
@@ -883,7 +874,7 @@ export const checkComponentSecurity = (req, res) => {
       },
       {
         name: "marked",
-        version: "0.7.0", 
+        version: "0.7.0",
         vulnerability: "CVE-2022-21680",
         severity: "High",
         description: "XSS in markdown parsing",
@@ -892,7 +883,7 @@ export const checkComponentSecurity = (req, res) => {
       {
         name: "handlebars",
         version: "4.7.6",
-        vulnerability: "CVE-2021-23369", 
+        vulnerability: "CVE-2021-23369",
         severity: "Critical",
         description: "Remote Code Execution",
         exploitable: true
@@ -901,12 +892,12 @@ export const checkComponentSecurity = (req, res) => {
         name: "minimist",
         version: "1.2.5",
         vulnerability: "CVE-2021-44906",
-        severity: "Critical", 
+        severity: "Critical",
         description: "Prototype Pollution",
         exploitable: true
       }
     ];
-    
+
     res.status(200).json({
       message: "Component security analysis complete",
       componentsScanned: vulnerableComponents.length,
@@ -917,9 +908,9 @@ export const checkComponentSecurity = (req, res) => {
       securityStatus: "Multiple vulnerabilities detected"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Security check failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -928,8 +919,8 @@ export const checkComponentSecurity = (req, res) => {
 export const deserializeUserData = (req, res) => {
   try {
     const { serializedData } = req.body;
-    
-    const deserializedData = eval(`(${serializedData})`); 
+
+    const deserializedData = eval(`(${serializedData})`);
     res.status(200).json({
       message: "Data deserialized successfully",
       data: deserializedData,
@@ -937,9 +928,9 @@ export const deserializeUserData = (req, res) => {
       warning: "Deserialized data processed without validation"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Deserialization failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -947,10 +938,10 @@ export const deserializeUserData = (req, res) => {
 export const processUntrustedData = (req, res) => {
   try {
     const { userData, executeCode } = req.body;
-    
+
     if (executeCode) {
       const result = eval(executeCode); // Code injection vulnerability
-      
+
       res.status(200).json({
         message: "Code executed successfully",
         result: result,
@@ -966,9 +957,9 @@ export const processUntrustedData = (req, res) => {
       });
     }
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Data processing failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -982,25 +973,25 @@ export const checkDependencyIntegrity = (req, res) => {
       "https://untrusted-registry.example.com",
       "ftp://legacy-packages.internal" // Insecure protocol
     ];
-    
+
     // Simulate fetching from untrusted sources
     const packages = [
-      { 
-        name: "express-security", 
-        version: "1.0.0", 
+      {
+        name: "express-security",
+        version: "1.0.0",
         source: dependencySources[0],
         checksum: null, // No integrity verification
         signature: "unverified"
       },
-      { 
-        name: "auth-helper", 
-        version: "2.1.0", 
+      {
+        name: "auth-helper",
+        version: "2.1.0",
         source: dependencySources[1],
         checksum: "abc123", // Weak checksum
         signature: "self-signed"
       }
     ];
-    
+
     res.status(200).json({
       message: "Dependency integrity check completed",
       packages: packages,
@@ -1015,9 +1006,9 @@ export const checkDependencyIntegrity = (req, res) => {
       ]
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Dependency check failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1026,14 +1017,14 @@ export const checkDependencyIntegrity = (req, res) => {
 export const autoUpdateSystem = (req, res) => {
   try {
     const { updateSource, skipVerification } = req.body;
-    
+
     // VULNERABLE: Hardcoded update URLs and credentials
     const updateCredentials = {
       username: "admin", // Hardcoded credentials
       password: "update123", // SonarQube should detect this
       apiKey: "sk-1234567890abcdef" // Exposed API key
     };
-    
+
     // VULNERABLE: Auto-update without signature verification
     const updateConfig = {
       autoUpdate: true,
@@ -1043,7 +1034,7 @@ export const autoUpdateSystem = (req, res) => {
       allowDowngrade: true, // Allow version downgrades
       bypassSecurity: skipVerification || true
     };
-    
+
     res.status(200).json({
       message: "Auto-update configuration applied",
       config: updateConfig,
@@ -1058,9 +1049,9 @@ export const autoUpdateSystem = (req, res) => {
       note: "System configured for automated updates without security validation"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Auto-update configuration failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1078,7 +1069,7 @@ export const getCIPipelineSecrets = (req, res) => {
       DOCKER_REGISTRY_TOKEN: "dckr_pat_1234567890abcdef", // Docker token
       SLACK_WEBHOOK: "https://hooks.slack.com/services/T00/B00/XXXX" // Webhook URL
     };
-    
+
     // VULNERABLE: Environment configuration without encryption
     const ciConfig = {
       environment: "production",
@@ -1094,7 +1085,7 @@ export const getCIPipelineSecrets = (req, res) => {
         healthCheck: false // No health checks
       }
     };
-    
+
     res.status(200).json({
       message: "CI/CD pipeline configuration retrieved",
       configuration: ciConfig,
@@ -1109,9 +1100,9 @@ export const getCIPipelineSecrets = (req, res) => {
       ]
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Pipeline configuration retrieval failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1121,12 +1112,12 @@ export const validateSupplyChain = (req, res) => {
   try {
     // VULNERABLE: Using Function constructor - SonarQube should detect this
     const { packageName, packageCode } = req.body;
-    
+
     // Simulate supply chain attack through dynamic code execution
     if (packageCode) {
       // VULNERABLE: Function constructor allows code injection
       const maliciousFunction = new Function('return ' + packageCode)(); // SonarQube should flag this
-      
+
       res.status(200).json({
         message: "Package validation completed",
         packageName: packageName,
@@ -1135,11 +1126,11 @@ export const validateSupplyChain = (req, res) => {
         securityBypass: "Function constructor used"
       });
     }
-    
+
     // VULNERABLE: Weak hash algorithms for integrity checking
     const crypto = require('crypto');
     const weakHash = crypto.createHash('md5').update(packageName || 'default').digest('hex');
-    
+
     res.status(200).json({
       message: "Supply chain validation performed",
       package: packageName || "unknown",
@@ -1155,9 +1146,9 @@ export const validateSupplyChain = (req, res) => {
       ]
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Supply chain validation failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1166,18 +1157,18 @@ export const validateSupplyChain = (req, res) => {
 export const loadDynamicPlugin = (req, res) => {
   try {
     const { pluginUrl, pluginCode, autoLoad } = req.body;
-    
+
     // SECURE: Safe plugin loading with validation
     if (pluginUrl) {
       // Validate plugin URL against whitelist
       const allowedPlugins = [
         'lodash',
-        'moment', 
+        'moment',
         'axios',
         './plugins/safe-plugin.js',
         './plugins/user-plugin.js'
       ];
-      
+
       if (!allowedPlugins.includes(pluginUrl)) {
         logEvent(`Blocked unsafe plugin load attempt: ${pluginUrl}`);
         return res.status(400).json({
@@ -1185,12 +1176,12 @@ export const loadDynamicPlugin = (req, res) => {
           securityStatus: "Plugin load blocked for security"
         });
       }
-      
+
       try {
         // Safe require with whitelisted modules only
         const plugin = require(pluginUrl);
         logEvent(`Safe plugin loaded: ${pluginUrl}`);
-        
+
         res.status(200).json({
           message: "Plugin loaded safely",
           source: pluginUrl,
@@ -1206,13 +1197,13 @@ export const loadDynamicPlugin = (req, res) => {
         });
       }
     }
-    
+
     // VULNERABLE: Direct code execution from user input
     if (pluginCode) {
       try {
         // SonarQube should detect eval() usage
         const result = eval(pluginCode); // Code injection
-        
+
         res.status(200).json({
           message: "Plugin code executed",
           code: pluginCode,
@@ -1228,7 +1219,7 @@ export const loadDynamicPlugin = (req, res) => {
         });
       }
     }
-    
+
     // Default unsafe plugin configuration
     res.status(200).json({
       message: "Plugin system configuration",
@@ -1249,9 +1240,9 @@ export const loadDynamicPlugin = (req, res) => {
       ]
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Plugin loading failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1266,7 +1257,7 @@ export const validateCodeIntegrity = (req, res) => {
       token: "ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", // GitHub token pattern
       sshKey: "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA...", // SSH private key
     };
-    
+
     const repositories = [
       {
         url: "http://git.internal.com/app.git", // HTTP protocol for git
@@ -1278,13 +1269,13 @@ export const validateCodeIntegrity = (req, res) => {
       },
       {
         url: "https://github.com/user/sensitive-repo.git",
-        branch: "production", 
+        branch: "production",
         verified: false,
         credentials: repoCredentials,
         allowFork: true // Allow forked repositories
       }
     ];
-    
+
     res.status(200).json({
       message: "Code repository integrity check",
       repositories: repositories,
@@ -1292,7 +1283,7 @@ export const validateCodeIntegrity = (req, res) => {
       integrityStatus: "Multiple violations detected",
       vulnerabilities: [
         "Hardcoded repository credentials",
-        "HTTP protocol for Git operations", 
+        "HTTP protocol for Git operations",
         "No commit signature verification",
         "SSH private keys exposed",
         "GitHub tokens exposed"
@@ -1300,9 +1291,9 @@ export const validateCodeIntegrity = (req, res) => {
       recommendations: "Implement proper secrets management and signature verification"
     });
   } catch (error) {
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Repository integrity check failed",
-      details: error.message 
+      details: error.message
     });
   }
 };
@@ -1310,30 +1301,31 @@ export const validateCodeIntegrity = (req, res) => {
 // Secure JWT verification middleware
 export const verifyToken = (req, res, next) => {
   const token = req.cookies.accessToken || req.headers.authorization?.split(' ')[1];
-  
+
   if (!token) {
-    logEvent(`Unauthorized access attempt from IP: ${req.ip}`);
+    logEvent(`Unauthorized access attempt from IP: ${req.ip} (No token)`);
     return res.status(401).json({ error: "Access token required" });
   }
-  
+
   try {
-    // Verify JWT with strong algorithm and additional checks
+    // Verify the token with the SAME TOP-LEVEL JWT_SECRET
     const decoded = jwt.verify(token, JWT_SECRET, {
       algorithms: [JWT_ALGORITHM],
       issuer: 'secure-app',
       audience: 'app-users'
     });
-    
+
     req.userInfo = decoded;
     logEvent(`Token verified for user: ${decoded.username}`);
-    next();
-    
+    next(); // Proceed to the next middleware/controller
+
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
       logEvent(`Expired token used by IP: ${req.ip}`);
       return res.status(401).json({ error: "Token expired" });
     } else if (error.name === 'JsonWebTokenError') {
       logEvent(`Invalid token used by IP: ${req.ip} - ${error.message}`);
+      // This is the error you were seeing
       return res.status(401).json({ error: "Invalid token" });
     } else {
       logEvent(`Token verification error: ${error.message}`);
