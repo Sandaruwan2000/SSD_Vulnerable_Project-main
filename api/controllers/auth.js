@@ -2,6 +2,7 @@ import { db } from "../connect.js";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library"; // For Google Login
 
 // Security logging function
 const logEvent = (message) => {
@@ -13,6 +14,17 @@ const logEvent = (message) => {
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(64).toString('hex');
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
 const JWT_ALGORITHM = 'HS256';
+
+const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
+const FACEBOOK_APP_SECRET = process.env.FACEBOOK_APP_SECRET;
+
+// --- Google OAuth Client ---
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID; // Get from .env file
+if (!GOOGLE_CLIENT_ID) {
+  console.warn("WARNING: GOOGLE_CLIENT_ID is not set in the environment variables. Google Login will not work.");
+}
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+
 
 // System tracking for failed login attempts
 const failedAttempts = new Map();
@@ -171,6 +183,249 @@ export const logout = (req, res) => {
     sameSite: "none"
   }).status(200).json("User has been logged out.")
 };
+
+
+export const googleLogin = async (req, res) => {
+  const { token } = req.body; // Token from @react-oauth/google
+
+  if (!GOOGLE_CLIENT_ID) {
+    return res.status(500).json({ error: "Google Client ID not configured on the server." });
+  }
+  if (!token) {
+     return res.status(400).json({ error: "Google token is required." });
+  }
+
+  try {
+    // 1. Verify Google's token
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload || !payload.email || !payload.email_verified) {
+         logEvent(`Google Auth failed: Invalid payload or email not verified for token.`);
+         return res.status(401).json({ error: "Invalid Google token or email not verified." });
+    }
+
+    const email = payload.email;
+    const name = payload.name || email.split('@')[0]; // Use name or derive from email
+    const profilePic = payload.picture; // Google provides profile picture URL
+
+    // 2. Check if this user exists in our database by email
+    const q = "SELECT * FROM users WHERE email = ?";
+    db.query(q, [email], (err, data) => {
+      if (err) {
+           logEvent(`Database error checking Google user email ${email}: ${err.message}`);
+           return res.status(500).json({ error: "Database error during Google login." });
+      }
+
+      if (data.length > 0) {
+        // 3a. User exists. Log them in.
+        logEvent(`Successful Google login for existing user: ${email} from IP: ${req.ip}`);
+        loginUser(req, res, data[0]);
+      } else {
+        // 3b. New user. Register them first.
+        logEvent(`New user registration via Google: ${email} from IP: ${req.ip}`);
+
+        // Create a secure random password hash (required by DB schema, but won't be used)
+        const randomPassword = crypto.randomBytes(32).toString("hex");
+        const salt = bcrypt.genSaltSync(10);
+        const hashedPassword = bcrypt.hashSync(randomPassword, salt);
+
+        // Create a unique username (append random chars if email prefix exists)
+        let username = email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 15); // Sanitize and shorten
+        // Check if username exists and append random chars if needed - this part needs careful handling
+        // For simplicity now, we assume it's unique enough or handle collision gracefully below.
+
+        const insertQ = "INSERT INTO users (username, email, password, name, profilePic, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
+
+        db.query(insertQ, [username, email, hashedPassword, name, profilePic], (insertErr, result) => {
+          if (insertErr) {
+            // Handle potential duplicate username from Google sign-up if check wasn't done
+            if (insertErr.code === 'ER_DUP_ENTRY') {
+                 logEvent(`Duplicate username generated during Google signup for ${email}. Trying again.`);
+                 // Try generating a slightly different username
+                 username = username.substring(0, 12) + "_" + crypto.randomBytes(2).toString('hex');
+                 db.query(insertQ, [username, email, hashedPassword, name, profilePic], (retryErr, retryResult) => {
+                      if (retryErr) {
+                           logEvent(`Failed to create new Google user ${email} after retry: ${retryErr.message}`);
+                           return res.status(500).json({ error: "Failed to create new user account." });
+                      }
+                      const newUser = { id: retryResult.insertId, username, email, name, profilePic, role: "user" };
+                      loginUser(req, res, newUser);
+                 });
+            } else {
+                 logEvent(`Failed to create new Google user ${email}: ${insertErr.message}`);
+                 return res.status(500).json({ error: "Failed to create new user account." });
+            }
+          } else {
+            // User created successfully, now log them in
+            const newUser = { id: result.insertId, username, email, name, profilePic, role: "user" };
+            loginUser(req, res, newUser);
+          }
+        });
+      }
+    });
+
+  } catch (error) {
+    logEvent(`Google Auth verification error: ${error.message}\n${error.stack}`);
+    res.status(401).json({ error: "Invalid or expired Google Token" });
+  }
+};
+
+
+export const facebookLogin = async (req, res) => {
+  const { accessToken, userID } = req.body;
+
+  if (!FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET) {
+     return res.status(500).json({ error: "Facebook App credentials not configured on the server." });
+  }
+  if (!accessToken || !userID) {
+    return res.status(400).json({ error: "Facebook accessToken and userID are required." });
+  }
+
+  try {
+    // 1. Verify the access token with Facebook and get user details
+    // We need to call the Facebook Graph API
+    const graphApiUrl = `https://graph.facebook.com/${userID}?fields=id,name,email,picture&access_token=${accessToken}`;
+    const appSecretProof = crypto.createHmac('sha256', FACEBOOK_APP_SECRET).update(accessToken).digest('hex');
+    const graphApiResponse = await axios.get(graphApiUrl, {
+        params: { appsecret_proof: appSecretProof } // For added security
+    });
+
+    const fbUser = graphApiResponse.data;
+
+    // Check if Facebook returned necessary data (especially email)
+    if (!fbUser || !fbUser.email) {
+      // Sometimes users don't grant email permission or don't have one verified
+      logEvent(`Facebook Auth failed: Email not received for user ID ${userID}. Response: ${JSON.stringify(fbUser)}`);
+      return res.status(400).json({ error: "Could not retrieve email from Facebook. Please ensure email permission is granted." });
+    }
+
+    const email = fbUser.email;
+    const name = fbUser.name;
+    // Facebook picture URL might need adjustment (get type=large)
+    const profilePic = fbUser.picture?.data?.url;
+
+    // 2. Check if this user exists in our database by email
+    const q = "SELECT * FROM users WHERE email = ?";
+    db.query(q, [email], (err, data) => {
+      if (err) {
+        logEvent(`Database error checking Facebook user email ${email}: ${err.message}`);
+        return res.status(500).json({ error: "Database error during Facebook login." });
+      }
+
+      if (data.length > 0) {
+        // 3a. User exists. Log them in.
+        logEvent(`Successful Facebook login for existing user: ${email} from IP: ${req.ip}`);
+        loginUser(req, res, data[0]); // Use the same helper function
+      } else {
+        // 3b. New user. Register them first.
+        logEvent(`New user registration via Facebook: ${email} from IP: ${req.ip}`);
+
+        const randomPassword = crypto.randomBytes(32).toString("hex");
+        const salt = bcrypt.genSaltSync(10);
+        const hashedPassword = bcrypt.hashSync(randomPassword, salt);
+        let username = email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 15);
+
+        const insertQ = "INSERT INTO users (username, email, password, name, profilePic, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
+
+        db.query(insertQ, [username, email, hashedPassword, name, profilePic], (insertErr, result) => {
+          if (insertErr) {
+             if (insertErr.code === 'ER_DUP_ENTRY') { // Handle potential username collision
+                 username = username.substring(0, 12) + "_" + crypto.randomBytes(2).toString('hex');
+                 db.query(insertQ, [username, email, hashedPassword, name, profilePic], (retryErr, retryResult) => {
+                     if (retryErr) {
+                         logEvent(`Failed to create new Facebook user ${email} after retry: ${retryErr.message}`);
+                         return res.status(500).json({ error: "Failed to create new user account." });
+                     }
+                     const newUser = { id: retryResult.insertId, username, email, name, profilePic, role: "user" };
+                     loginUser(req, res, newUser);
+                 });
+             } else {
+                 logEvent(`Failed to create new Facebook user ${email}: ${insertErr.message}`);
+                 return res.status(500).json({ error: "Failed to create new user account." });
+             }
+          } else {
+            // User created successfully, log them in
+            const newUser = { id: result.insertId, username, email, name, profilePic, role: "user" };
+            loginUser(req, res, newUser);
+          }
+        });
+      }
+    });
+
+  } catch (error) {
+    logEvent(`Facebook Graph API or verification error: ${error.response?.data?.error?.message || error.message}`);
+    // Log the full error if available
+    // console.error("Facebook Error Details:", error.response?.data || error);
+    res.status(401).json({ error: "Invalid or expired Facebook Token, or failed to fetch user data." });
+  }
+};
+
+const loginUser = (req, res, user) => {
+  try {
+    // 1. Create the JWT token payload (minimal necessary info)
+    const tokenPayload = {
+      id: user.id,
+      username: user.username, // Include username if needed for display/checks
+      role: user.role || "user" // Default to 'user' role if none is set
+    };
+
+    // Validate payload before signing
+    if (!tokenPayload.id) {
+         logEvent(`Login aborted: User ID is missing for user ${user.email || user.username}`);
+         return res.status(500).json({ error: "Cannot log in user: missing ID." });
+    }
+
+
+    // 2. Sign the token using the consistent secret and algorithm
+    const token = jwt.sign(tokenPayload, JWT_SECRET, {
+      algorithm: JWT_ALGORITHM,
+      expiresIn: JWT_EXPIRES_IN,
+      issuer: 'secure-app',    // Identify your application
+      audience: 'app-users' // Define the intended audience
+    });
+
+    // 3. **SECURITY FIX**: Limit the data sent back to the client
+    // Only send data the frontend *actually needs* after login.
+    const limitedUserData = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      email: user.email, // Send email if needed (e.g., display), but be cautious
+      profilePic: user.profilePic,
+      coverPic: user.coverPic,
+      // Avoid sending: city, website, created_at, role unless strictly necessary client-side
+    };
+
+    // 4. Set the HttpOnly cookie and send the limited user data
+    res
+      .cookie("accessToken", token, {
+        httpOnly: true,       // Crucial: Prevents client-side script access (XSS protection)
+
+        // **CRITICAL for localhost**: Set 'secure' to 'false' for HTTP.
+        // **PRODUCTION**: Set 'secure' to 'true' for HTTPS.
+        secure: false, // <-- Set to 'false' ONLY for local HTTP development
+
+        sameSite: 'none',     // Required for cross-origin cookies if frontend/backend are on different ports/domains. Requires secure:true in production.
+
+        maxAge: parseInt(JWT_EXPIRES_IN) * 60 * 60 * 1000 || 3600000 // Match token expiry (e.g., 1h = 3600000ms)
+      })
+      .status(200)
+      .json({
+        message: "Login successful",
+        user: limitedUserData // Send only the limited, safe data
+      });
+
+  } catch (error) {
+       logEvent(`Error during loginUser helper function for user ${user.id}: ${error.message}\n${error.stack}`);
+       // Don't leak detailed errors to the client
+       return res.status(500).json({ error: "Login process failed." });
+  }
+};
+
 
 // A07:2021 - Identification and Authentication Failures 
 // Vulnerability 1: Weak password storage (SonarQube detectable - hardcoded credentials)

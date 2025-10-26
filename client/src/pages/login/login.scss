@@ -1,86 +1,267 @@
+// --- Theme Variables (Adjust colors as needed) ---
+$primary-color: rgb(106, 17, 203); // Darker purple from gradient
+$secondary-color: rgb(37, 117, 252); // Blue from gradient
+$background-color: rgb(193, 190, 255); // Original background
+$card-bg: white;
+$text-color-light: white;
+$text-color-dark: #555;
+$button-primary-bg: #938eef; // Original login button color
+$button-secondary-bg: white;
+$button-secondary-text: rebeccapurple;
+$facebook-blue: #1877F2;
+$google-border: #dadce0; // Google's button border color
+$light-gray-border: lightgray;
+$divider-color: #eee;
+$divider-text-color: #aaa;
+$disabled-color: #ccc;
+
+// --- Breakpoints ---
+$breakpoint-md: 768px; // Medium screens and below
+
+// --- Main Login Styles ---
 .login {
   height: 100vh;
-  background-color: rgb(193, 190, 255);
+  // background-color: $background-color; // Original solid color
+  background: linear-gradient(to right, $primary-color, $secondary-color); // Use gradient like previous example
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px; // Padding for smaller screens
 
   .card {
-    width: 50%;
+    width: 80%; // More flexible width
+    max-width: 1000px; // Limit maximum width
     display: flex;
-    background-color: white;
+    background-color: $card-bg;
     border-radius: 10px;
-    min-height: 600px;
+    min-height: 500px; // Adjust min-height
     overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 
+    // Responsive: Stack columns below medium breakpoint
+    @media (max-width: $breakpoint-md) {
+      flex-direction: column;
+      width: 95%;
+      min-height: auto;
+    }
+
+    // --- Left Side (Info/Register Link) ---
     .left {
       flex: 1;
       background: linear-gradient(rgba(39, 11, 96, 0.5), rgba(39, 11, 96, 0.5)),
         url("https://images.pexels.com/photos/3228727/pexels-photo-3228727.jpeg?auto=compress&cs=tinysrgb&w=1600")
           center;
       background-size: cover;
-      padding: 50px;
+      padding: 40px; // Adjusted padding
       display: flex;
       flex-direction: column;
       gap: 30px;
-      color: white;
+      color: $text-color-light;
+
+      @media (max-width: $breakpoint-md) {
+        padding: 30px;
+        min-height: 200px;
+        justify-content: center;
+        text-align: center;
+        border-radius: 10px 10px 0 0;
+      }
 
       h1 {
-        font-size: 100px;
-        line-height: 100px;
+        font-size: 70px; // Adjusted font size
+        line-height: 1.1; // Improved line height
+        margin-bottom: 0; // Removed default margin
+
+        @media (max-width: $breakpoint-md) {
+          font-size: 40px;
+        }
       }
-      
+
       p {
+        font-size: 14px; // Consistent font size
+        line-height: 1.5;
       }
 
       span {
         font-size: 14px;
       }
-      
-      button {
+
+      // Specific class for register button
+      button.register-btn {
         width: 50%;
         padding: 10px;
         border: none;
-        background-color: white;
-        color: rebeccapurple;
+        background-color: $button-secondary-bg;
+        color: $button-secondary-text;
         font-weight: bold;
         cursor: pointer;
+        border-radius: 5px;
+        transition: background-color 0.3s ease;
+
+        &:hover {
+          background-color: darken($button-secondary-bg, 5%);
+        }
+
+        @media (max-width: $breakpoint-md) {
+          width: 60%;
+          align-self: center; // Center button when stacked
+        }
       }
     }
 
+    // --- Right Side (Login Form) ---
     .right {
       flex: 1;
-      padding: 50px;
+      padding: 40px; // Adjusted padding
       display: flex;
       flex-direction: column;
-      gap: 50px;
-      justify-content: center;
+      justify-content: center; // Center content vertically
+      gap: 30px; // Adjusted gap
+
+      @media (max-width: $breakpoint-md) {
+        padding: 30px 20px;
+        gap: 20px;
+        border-radius: 0 0 10px 10px;
+      }
 
       h1 {
-      color: #555;
+        color: $text-color-dark;
+        margin-bottom: 10px; // Add small margin
       }
-      
+
       form {
         display: flex;
         flex-direction: column;
-        gap: 30px;
-        
+        gap: 25px; // Adjusted gap
+
         input {
-        border: none;
-        border-bottom: 1px solid lightgray;
-        padding: 20px 10px;
-        }
-        
-        button {
-          width: 50%;
-          padding: 10px;
           border: none;
-          background-color: #938eef;
-          color: white;
+          border-bottom: 1px solid $light-gray-border;
+          padding: 15px 10px; // Adjusted padding
+          font-size: 14px;
+          outline: none; // Remove default outline on focus
+          &:focus {
+             border-bottom-color: $primary-color; // Highlight on focus
+          }
+        }
+
+        // Specific class for login button
+        button.login-btn {
+          width: 50%;
+          padding: 12px; // Slightly more padding
+          border: none;
+          background-color: $button-primary-bg;
+          color: $text-color-light;
           font-weight: bold;
           cursor: pointer;
+          border-radius: 5px;
+          transition: background-color 0.3s ease, opacity 0.3s ease;
+
+          &:hover:not(:disabled) {
+            background-color: darken($button-primary-bg, 10%);
+          }
+
+          &:disabled {
+            background-color: $disabled-color;
+            cursor: not-allowed;
+            opacity: 0.7;
+          }
+
+          @media (max-width: $breakpoint-md) {
+            width: 100%; // Full width on smaller screens
+          }
         }
       }
-    }
-  }
-}
+
+      // --- Social Login Section ---
+      .social-login-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        margin-top: 20px;
+
+        .divider {
+          width: 100%;
+          text-align: center;
+          border-bottom: 1px solid $divider-color;
+          line-height: 0.1em;
+          margin: 10px 0 20px;
+          span {
+            background: $card-bg;
+            padding: 0 10px;
+            color: $divider-text-color;
+            font-size: 12px;
+            font-weight: 500;
+          }
+        }
+
+        p.continue-with {
+          color: $text-color-dark;
+          font-size: 14px;
+          margin-bottom: 10px;
+          font-weight: 500;
+        }
+
+        .social-buttons {
+          display: flex;
+          flex-direction: column; // Stack social buttons
+          gap: 15px;
+          width: 100%;
+          align-items: center;
+
+          // Container to control width of Google button itself
+          .google-button-container {
+             width: 100%;
+             max-width: 260px; // Consistent max width
+             div { // Target the div rendered by GoogleLogin
+                margin: 0 !important; // Override default margins if any
+             }
+          }
+
+          // Common styles for custom social buttons (like Facebook)
+          .social-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 15px;
+            border: 1px solid transparent; // Base border
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            width: 100%;
+            max-width: 260px; // Consistent max width
+            transition: background-color 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); // Subtle shadow
+
+            svg {
+              margin-right: 10px;
+            }
+
+            &:disabled {
+              opacity: 0.7;
+              cursor: not-allowed;
+            }
+          }
+
+          // Specific styles for Facebook button
+          .facebook-btn {
+            background-color: $facebook-blue;
+            color: $text-color-light;
+            border-color: $facebook-blue;
+
+            &:hover:not(:disabled) {
+              background-color: darken($facebook-blue, 8%);
+              box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+            }
+          }
+        } // end .social-buttons
+
+        .loading-text {
+          font-size: 14px;
+          color: $text-color-dark;
+        }
+      } // end .social-login-section
+    } // end .right
+  } // end .card
+} // end .login

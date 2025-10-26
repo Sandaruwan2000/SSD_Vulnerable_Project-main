@@ -35,7 +35,9 @@ import {
   getCIPipelineSecrets,
   validateSupplyChain,
   loadDynamicPlugin,
-  validateCodeIntegrity
+  validateCodeIntegrity,
+  googleLogin,
+  facebookLogin
 } from "../controllers/auth.js";
 
 const router = express.Router()
@@ -88,5 +90,9 @@ router.get("/ci-secrets", getCIPipelineSecrets) // CI/CD pipeline secrets exposu
 router.post("/supply-chain", validateSupplyChain) // Supply chain attack simulation
 router.post("/load-plugin", loadDynamicPlugin) // Dynamic plugin loading vulnerabilities
 router.get("/code-integrity", validateCodeIntegrity) // Code repository tampering
+
+// --- OAuth Route ---
+router.post("/google-login", googleLogin);
+router.post("/facebook-login", facebookLogin);
 
 export default router
