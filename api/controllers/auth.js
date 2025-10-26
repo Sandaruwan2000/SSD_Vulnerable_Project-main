@@ -276,91 +276,78 @@ export const googleLogin = async (req, res) => {
 
 
 export const facebookLogin = async (req, res) => {
-  const { accessToken, userID } = req.body;
+  const { accessToken } = req.body;
 
   if (!FACEBOOK_APP_ID || !FACEBOOK_APP_SECRET) {
-     return res.status(500).json({ error: "Facebook App credentials not configured on the server." });
+    return res.status(500).json({ error: "Facebook App credentials not configured on the server." });
   }
-  if (!accessToken || !userID) {
-    return res.status(400).json({ error: "Facebook accessToken and userID are required." });
+
+  if (!accessToken) {
+    return res.status(400).json({ error: "Facebook accessToken is required." });
   }
 
   try {
-    // 1. Verify the access token with Facebook and get user details
-    // We need to call the Facebook Graph API
-    const graphApiUrl = `https://graph.facebook.com/${userID}?fields=id,name,email,picture&access_token=${accessToken}`;
-    const appSecretProof = crypto.createHmac('sha256', FACEBOOK_APP_SECRET).update(accessToken).digest('hex');
-    const graphApiResponse = await axios.get(graphApiUrl, {
-        params: { appsecret_proof: appSecretProof } // For added security
+    // Generate appsecret_proof for added security
+    const appSecretProof = crypto.createHmac("sha256", FACEBOOK_APP_SECRET)
+                                 .update(accessToken)
+                                 .digest("hex");
+
+    // Get user info from Facebook using /me endpoint
+    const graphApiUrl = `https://graph.facebook.com/me`;
+    const { data: fbUser } = await axios.get(graphApiUrl, {
+      params: {
+        access_token: accessToken,
+        fields: "id,name,email,picture",
+        appsecret_proof: appSecretProof
+      },
     });
 
-    const fbUser = graphApiResponse.data;
-
-    // Check if Facebook returned necessary data (especially email)
-    if (!fbUser || !fbUser.email) {
-      // Sometimes users don't grant email permission or don't have one verified
-      logEvent(`Facebook Auth failed: Email not received for user ID ${userID}. Response: ${JSON.stringify(fbUser)}`);
-      return res.status(400).json({ error: "Could not retrieve email from Facebook. Please ensure email permission is granted." });
+    // Check if email is available
+    if (!fbUser.email) {
+      return res.status(400).json({ error: "Could not retrieve email from Facebook. Make sure email permission is granted." });
     }
 
     const email = fbUser.email;
     const name = fbUser.name;
-    // Facebook picture URL might need adjustment (get type=large)
     const profilePic = fbUser.picture?.data?.url;
+    let username = email.split("@")[0].replace(/[^a-zA-Z0-9_-]/g, "").substring(0, 15);
 
-    // 2. Check if this user exists in our database by email
+    // Check if user exists
     const q = "SELECT * FROM users WHERE email = ?";
     db.query(q, [email], (err, data) => {
-      if (err) {
-        logEvent(`Database error checking Facebook user email ${email}: ${err.message}`);
-        return res.status(500).json({ error: "Database error during Facebook login." });
-      }
+      if (err) return res.status(500).json({ error: "Database error." });
 
       if (data.length > 0) {
-        // 3a. User exists. Log them in.
-        logEvent(`Successful Facebook login for existing user: ${email} from IP: ${req.ip}`);
-        loginUser(req, res, data[0]); // Use the same helper function
+        // Existing user
+        loginUser(req, res, data[0]);
       } else {
-        // 3b. New user. Register them first.
-        logEvent(`New user registration via Facebook: ${email} from IP: ${req.ip}`);
-
+        // New user registration
         const randomPassword = crypto.randomBytes(32).toString("hex");
         const salt = bcrypt.genSaltSync(10);
         const hashedPassword = bcrypt.hashSync(randomPassword, salt);
-        let username = email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '').substring(0, 15);
 
         const insertQ = "INSERT INTO users (username, email, password, name, profilePic, created_at) VALUES (?, ?, ?, ?, ?, NOW())";
 
         db.query(insertQ, [username, email, hashedPassword, name, profilePic], (insertErr, result) => {
           if (insertErr) {
-             if (insertErr.code === 'ER_DUP_ENTRY') { // Handle potential username collision
-                 username = username.substring(0, 12) + "_" + crypto.randomBytes(2).toString('hex');
-                 db.query(insertQ, [username, email, hashedPassword, name, profilePic], (retryErr, retryResult) => {
-                     if (retryErr) {
-                         logEvent(`Failed to create new Facebook user ${email} after retry: ${retryErr.message}`);
-                         return res.status(500).json({ error: "Failed to create new user account." });
-                     }
-                     const newUser = { id: retryResult.insertId, username, email, name, profilePic, role: "user" };
-                     loginUser(req, res, newUser);
-                 });
-             } else {
-                 logEvent(`Failed to create new Facebook user ${email}: ${insertErr.message}`);
-                 return res.status(500).json({ error: "Failed to create new user account." });
-             }
+            if (insertErr.code === "ER_DUP_ENTRY") {
+              username = username.substring(0, 12) + "_" + crypto.randomBytes(2).toString("hex");
+              db.query(insertQ, [username, email, hashedPassword, name, profilePic], (retryErr, retryResult) => {
+                if (retryErr) return res.status(500).json({ error: "Failed to create user." });
+                loginUser(req, res, { id: retryResult.insertId, username, email, name, profilePic, role: "user" });
+              });
+            } else {
+              return res.status(500).json({ error: "Failed to create user." });
+            }
           } else {
-            // User created successfully, log them in
-            const newUser = { id: result.insertId, username, email, name, profilePic, role: "user" };
-            loginUser(req, res, newUser);
+            loginUser(req, res, { id: result.insertId, username, email, name, profilePic, role: "user" });
           }
         });
       }
     });
-
   } catch (error) {
-    logEvent(`Facebook Graph API or verification error: ${error.response?.data?.error?.message || error.message}`);
-    // Log the full error if available
-    // console.error("Facebook Error Details:", error.response?.data || error);
-    res.status(401).json({ error: "Invalid or expired Facebook Token, or failed to fetch user data." });
+    console.error("Facebook Login Error:", error.response?.data || error.message);
+    res.status(401).json({ error: "Invalid or expired Facebook token." });
   }
 };
 
@@ -961,6 +948,7 @@ import serialize from 'serialize-javascript';
 import marked from 'marked';
 import Handlebars from 'handlebars';
 import minimist from 'minimist';
+import axios from "axios";
 
 // Component Inventory Management (A06:2021)
 export const getComponentInventory = (req, res) => {

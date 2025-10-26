@@ -58,44 +58,46 @@ const Login = () => {
   };
 
   const handleGoogleError = (error) => {
-     if (error && error.type === 'popup_closed') {
-        console.log('Google login popup closed by user.');
-     } else {
-        console.error("Google Login Failed:", error);
-        toast.error("Google login process failed or was cancelled.");
-     }
+    if (error && error.type === 'popup_closed') {
+      console.log('Google login popup closed by user.');
+    } else {
+      console.error("Google Login Failed:", error);
+      toast.error("Google login process failed or was cancelled.");
+    }
   };
 
   // --- Facebook Login Handler ---
+  // --- Simplified Facebook Login Handler ---
   const handleFacebookResponse = async (response) => {
-    if (response && response.accessToken && response.userID) {
+    console.log("Facebook login response:", response);
+
+    if (response.accessToken) {
       setIsLoading(true);
       try {
+        // send accessToken to your backend
         const res = await makeRequest.post("/auth/facebook-login", {
           accessToken: response.accessToken,
-          userID: response.userID,
         });
+
         updateCurrentUser(res.data.user);
         toast.success("Facebook login successful!");
         navigate("/");
       } catch (err) {
-        console.error("Facebook Login Backend Error:", err);
+        console.error("Facebook Login Error:", err);
         toast.error(err.response?.data?.error || "Facebook login failed.");
       } finally {
         setIsLoading(false);
       }
     } else {
-      console.log('Facebook login failed or was cancelled:', response);
-      if (response.status !== 'unknown'){
-         toast.error("Facebook login failed or was cancelled.");
-      }
+      toast.error("Facebook login failed or cancelled.");
     }
   };
+
 
   // Check if Facebook App ID is configured
   const facebookAppId = process.env.REACT_APP_FACEBOOK_APP_ID;
   if (!facebookAppId) {
-      console.warn("WARNING: REACT_APP_FACEBOOK_APP_ID is not set. Facebook Login button will be disabled.");
+    console.warn("WARNING: REACT_APP_FACEBOOK_APP_ID is not set. Facebook Login button will be disabled.");
   }
 
   return (
@@ -161,19 +163,19 @@ const Login = () => {
             <div className="social-buttons">
               {/* Google Button */}
               {!isLoading && (
-                 <div className="google-button-container">
-                   <GoogleLogin
-                     onSuccess={handleGoogleSuccess}
-                     onError={handleGoogleError}
-                     useOneTap={false}
-                     theme="outline"
-                     size="large"
-                     shape="rectangular"
-                     width="100%" // Make button fill container width
-                     logo_alignment="left"
-                    />
-                  </div>
-               )}
+                <div className="google-button-container">
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={handleGoogleError}
+                    useOneTap={false}
+                    theme="outline"
+                    size="large"
+                    shape="rectangular"
+                    width="100%" // Make button fill container width
+                    logo_alignment="left"
+                  />
+                </div>
+              )}
 
               {/* Facebook Button */}
               {/* Render only if App ID is available and not loading */}
@@ -183,24 +185,17 @@ const Login = () => {
                   autoLoad={false}
                   fields="name,email,picture"
                   callback={handleFacebookResponse}
-                  // Use Render Props to create a custom button
-                  render={renderProps => (
-                    <button
-                      onClick={renderProps.onClick}
-                      disabled={renderProps.disabled || isLoading}
-                      className="social-btn facebook-btn" // Custom class for styling
-                    >
-                      <FacebookIcon /> {/* Add Icon */}
-                      <span>Facebook</span>
-                    </button>
-                  )}
+                  icon={<FacebookIcon />}
+                  textButton="&nbsp;&nbsp;Login with Facebook"
                 />
               )}
-             {!facebookAppId && !isLoading && (
-                 <p style={{fontSize: '0.8em', color: 'grey'}}>Facebook Login not configured.</p>
-             )}
+
+
+              {!facebookAppId && !isLoading && (
+                <p style={{ fontSize: '0.8em', color: 'grey' }}>Facebook Login not configured.</p>
+              )}
             </div>
-             {isLoading && <p className="loading-text">Processing login...</p>}
+            {isLoading && <p className="loading-text">Processing login...</p>}
           </div>
         </div>
       </div>
